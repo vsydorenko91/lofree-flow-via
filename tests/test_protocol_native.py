@@ -67,9 +67,9 @@ class ProtocolNativeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
-        path = Path(cls.tmp.name) / 'protocol.dylib'
+        path = Path(cls.tmp.name) / 'protocol.so'
         subprocess.run(['clang', '-std=c99', '-Wall', '-Wextra', '-Werror', '-O2',
-                        '-ffreestanding', '-fno-builtin', '-dynamiclib',
+                        '-ffreestanding', '-fno-builtin', '-shared', '-fPIC',
                         str(ROOT / 'firmware/protocol.c'), '-o', str(path)], check=True)
         cls.lib = C.CDLL(str(path))
         cls.lib.flow_via_init.argtypes = [C.c_void_p, C.c_void_p, READ, COMMIT, GUARD, RESET, C.c_uint32]
