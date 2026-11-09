@@ -4,11 +4,12 @@
 
 <p align="center"><i>The Flow84 in the VIA web app: remap keys, record macros, set lighting, save it all on the keyboard.</i></p>
 
-A VIA-compatible firmware patch for the **Lofree Flow84** keyboard (stock firmware OE915 v2.52).
+A VIA-compatible firmware patch for the **Lofree Flow84** keyboard (stock firmware OE915 v2.52). A Flow100 version is planned.
 
 > **Read this first.**
 > * This is an unofficial hobby project, not affiliated with or supported by Lofree.
-> * **So far it has been tested on exactly one keyboard: the maintainer's own.** Other units,
+> * **Tested only on the Lofree Flow84** (84 keys), on one unit, over USB. **Flow100 (100 keys) support is
+>   still in development and not tested: do not flash this firmware to a Flow100.** Other units,
 >   hardware revisions or firmware versions may behave differently.
 > * Flashing always carries a risk of bricking the keyboard. Read [docs/RECOVERY.md](docs/RECOVERY.md)
 >   before you start. You do this at your own risk.
@@ -62,7 +63,7 @@ the keyboard did before still works; the patch only adds on top.
 
 ## Limitations
 
-* **One tested keyboard.** Everything here was verified on one Flow84 over USB.
+* **Flow84 only, one tested unit.** Everything here was verified on one Flow84 over USB. The Flow100 is not supported yet.
   Sleep/wake and Bluetooth were not specifically tested with this firmware.
 * **Flashing erases your saved profile.** Export your VIA layout first. It is a property of
   the vendor update procedure and cannot be avoided.
