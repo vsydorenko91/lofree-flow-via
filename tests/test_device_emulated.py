@@ -1,0 +1,454 @@
+"""Actual candidate ARM execution with banked USB CSR/FIFO model; no hardware."""
+from pathlib import Path
+import struct,sys,tempfile,unittest
+HERE=Path(__file__).resolve().parents[1]
+from build import build,RAW_DESCRIPTOR
+from emulator import Board,PHYS,TABLES
+from via_proto import packet
+from unicorn import UC_HOOK_MEM_READ
+
+
+class USBBoard(Board):
+    def __init__(self,elf,image):
+        super().__init__(elf,hold=(1,1))
+        self.image=image
+        self.write(0x2000,image[0x2000:])
+        self.write(0x401c34,self.read(TABLES[0],0x420))
+        self.write(0x4003c4,b'\x01')
+        self.endpoint=0;self.csr=[0]*4;self.rx=[]
+        self.tx=[[] for _ in range(4)];self.fifos=[[] for _ in range(4)]
+        self.reports=self.tx[1]
+        self.uc.hook_add(UC_HOOK_MEM_READ,self.on_read)
+        self.write(0x4018d1,b'\x01')
+        for _ in range(32):self.matrix()
+        self.poll()
+
+    def on_read(self,uc,access,address,size,value,data):
+        if address==0x804020 and size==1:
+            if not self.rx:raise AssertionError('EP0 read beyond supplied host data')
+            uc.mem_write(address,bytes([self.rx.pop(0)]))
+        elif address==0x804011 and size==1:
+            uc.mem_write(address,bytes([self.csr[self.endpoint]]))
+
+    def on_write(self,uc,access,address,size,value,data):
+        self.writes.append((address,size,value))
+        if address==0x80400e:self.endpoint=value
+        elif 0x804020<=address<=0x80402c and (address-0x804020)%4==0:
+            ep=(address-0x804020)//4
+            self.fifos[ep].append(value&255)
+        elif address==0x804011:
+            ep=self.endpoint;self.csr[ep]=value
+            if value==8:self.fifos[ep]=[]
+            if (ep and value==1) or (not ep and value==10 and self.fifos[0]):
+                self.tx[ep].append(bytes(self.fifos[ep]));self.fifos[ep]=[]
+
+    def call(self,name,*args):
+        if name=='th_matrix_process':name='th_gate_matrix'
+        return super().call(name,*args)
+
+    def send(self,ready=True):
+        self.csr[1]=0
+        return super().send(ready)
+
+    def poll(self):self.call('via_gate_poll')
+
+    def setup(self,raw):
+        self.rx=list(raw);self.fifos[0]=[]
+        self.w32(0x804014,0) # does not route other endpoint IRQs
+        self.write(0x804016,struct.pack('<H',len(raw)))
+        self.csr[0]=1;self.endpoint=0;self.write(0x80400e,b'\0')
+        self.call(0x17f4c)
+        self.assert_rx_empty()
+
+    def assert_rx_empty(self):
+        assert not self.rx,self.rx
+
+    def output(self,payload,interface=2,report_id=0):
+        setup=struct.pack('<BBHHH',0x21,9,0x0200|report_id,interface,len(payload))
+        self.setup(setup)
+        self.rx=list(payload);self.fifos[0]=[];self.csr[0]=1
+        self.write(0x804016,struct.pack('<H',len(payload)))
+        self.call(0x17f4c) # ORIGINAL EP0 receiver + original final routing
+        self.assert_rx_empty()
+
+    def receive(self):
+        assert self.tx[3], 'no VIA response'
+        result=self.tx[3].pop(0)
+        self.csr[3]=0
+        self.call(0x180f4) # ORIGINAL EP3 IN completion path
+        return result
+
+    def transact(self,payload):
+        self.output(payload);self.poll();reply=self.receive()
+        return reply
+
+    def poison(self):
+        self.write(0x24370,b'\x00\xde'*((len(self.image)-0x24370)//2))
+
+
+class DeviceTransport(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temp=tempfile.TemporaryDirectory(prefix='flow-via-')
+        cls.out=Path(cls.temp.name)
+        cls.image,cls.symbols,cls.manifest=build(cls.out)
+        cls.elf=cls.out/'flow84-via.elf'
+    @classmethod
+    def tearDownClass(cls):cls.temp.cleanup()
+    def board(self):return USBBoard(self.elf,self.image)
+
+    def set_mt(self,b,layer=0,slot=66,code=0x2129):
+        row,col=divmod(slot,22)
+        self.assertEqual(b.transact(packet(5,layer,row,col,code>>8,code&255))[0],5)
+        self.assertEqual(b.transact(packet(4,layer,row,col))[4:6],struct.pack('>H',code))
+        # Timing remains processing passes; shorten only the emulator descriptor.
+        for k in range(2):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',4))
+
+    def test_runtime_mt_short_tap_hold_and_remove(self):
+        b=self.board();self.set_mt(b)
+        b.matrix(PHYS);b.matrix();b.drain()
+        self.assertEqual([0x29 in r[2:7] for r in b.reports],[True,False])
+        self.assertNotIn(0x39,b.held_keys())
+        for _ in range(4):b.matrix(PHYS)
+        self.assertEqual(b.mods(),1);b.matrix();self.assertEqual(b.mods(),0)
+        self.assertEqual(b.transact(packet(5,0,3,0,0,0x39))[0],5)
+        b.matrix(PHYS);self.assertIn(0x39,b.held_keys());b.matrix()
+        self.assertEqual(b.held_keys(),set())
+
+    def test_runtime_mt_right_modifier_and_other_key_before_or_after_caps(self):
+        for other in (45,67):
+            b=self.board();self.set_mt(b,code=0x3129)
+            b.matrix(PHYS);b.matrix(PHYS,other)
+            self.assertEqual(b.mods(),0x10)
+            b.matrix(other);self.assertEqual(b.mods(),0)
+            b.matrix();self.assertEqual(b.held_keys(),set())
+
+    def test_runtime_mt_on_base_preserves_ordinary_action_on_fn_layer(self):
+        b=self.board();self.set_mt(b)
+        self.assertEqual(b.transact(packet(5,1,3,0,0,5))[0],5)
+        fn=next(i for i in range(132) if b.read(0x401c34+i*4,3)==bytes([6,2,0]))
+        b.matrix(fn);b.matrix(fn,PHYS)
+        self.assertIn(5,b.held_keys());self.assertEqual(b.mods(),0)
+        b.matrix(fn);b.matrix();self.assertEqual(b.held_keys(),set())
+
+    def test_runtime_mt_uses_current_physical_fn_for_same_scan_press(self):
+        for base_mt in (True,False):
+            b=self.board()
+            self.set_mt(b,layer=0 if base_mt else 1)
+            plain_layer=1 if base_mt else 0
+            self.assertEqual(b.transact(packet(5,plain_layer,3,0,0,5))[0],5)
+            fn=next(i for i in range(132) if b.read(0x401c34+i*4,3)==bytes([6,2,0]))
+            b.matrix(fn,PHYS)
+            if base_mt:
+                self.assertIn(5,b.held_keys());self.assertEqual(b.mods(),0)
+                b.matrix(PHYS);self.assertIn(5,b.held_keys())
+            else:
+                self.assertEqual(b.mods(),1);self.assertNotIn(5,b.held_keys())
+            b.matrix();self.assertEqual(b.mods(),0);self.assertEqual(b.held_keys(),set())
+
+    def set_lt(self,b,layer=0,slot=66,code=0x4129):
+        row,col=divmod(slot,22)
+        self.assertEqual(b.transact(packet(5,layer,row,col,code>>8,code&255))[0],5)
+        self.assertEqual(b.transact(packet(4,layer,row,col))[4:6],struct.pack('>H',code))
+        for k in range(2):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',4))
+
+    def test_runtime_lt_tap_sends_key_and_hold_selects_fn_layer(self):
+        b=self.board();self.set_lt(b)
+        b.matrix(PHYS);b.matrix();b.drain()
+        self.assertEqual([0x29 in r[2:7] for r in b.reports],[True,False])
+        self.assertNotIn(0x39,b.held_keys())
+        # Fn layer entry for the 'A' position is 'B'; hold via another key press.
+        self.assertEqual(b.transact(packet(5,1,3,1,0,5))[0],5)
+        b.matrix(PHYS);b.matrix(PHYS,67)
+        self.assertIn(5,b.held_keys());self.assertNotIn(4,b.held_keys());self.assertEqual(b.mods(),0)
+        b.matrix(PHYS);b.matrix();self.assertEqual(b.held_keys(),set())
+        # Long hold also activates the layer without another key.
+        for _ in range(5):b.matrix(PHYS)
+        b.matrix(PHYS,67);self.assertIn(5,b.held_keys())
+        b.matrix(PHYS);b.matrix();self.assertEqual(b.held_keys(),set())
+        # After release the base layer is back.
+        b.matrix(67);self.assertIn(4,b.held_keys());b.matrix()
+
+    def test_runtime_lt_modifier_press_does_not_force_hold_so_ctrl_space_chord_works(self):
+        b=self.board();self.set_lt(b,slot=66,code=0x412c)               # LT(1,Space) on Caps position
+        ctrl=next(i for i in range(132) if b.read(0x401c34+i*4,2)==bytes([1,1]) and i!=66)
+        b.matrix(PHYS);b.matrix(PHYS,ctrl)                              # Space(LT) pending, then Ctrl pressed
+        b.matrix(ctrl);b.drain();b.matrix(ctrl);b.drain()               # Space released while Ctrl still held
+        spaces=[r for r in b.reports if 0x2c in r[2:7]]
+        self.assertTrue(spaces and all(r[0]&1 for r in spaces),[r.hex() for r in b.reports])
+        b.matrix();b.drain()
+        self.assertEqual(b.held_keys(),set());self.assertEqual(b.mods(),0)
+
+    def test_via_unsaved_toggle_click_is_acknowledged(self):
+        b=self.board()
+        for v in (1,0):
+            r=b.transact(packet(7,0,13,v));self.assertEqual(r[0],7);self.assertEqual(r[2:4],bytes([13,v]))
+
+    def test_runtime_lt_still_holds_on_ordinary_other_key(self):
+        b=self.board();self.set_lt(b,slot=66,code=0x412c)
+        self.assertEqual(b.transact(packet(5,1,3,1,0,5))[0],5)
+        b.matrix(PHYS);b.matrix(PHYS,67);self.assertIn(5,b.held_keys());self.assertNotIn(0x2c,b.held_keys())
+        b.matrix(PHYS);b.matrix()
+
+    def test_runtime_lt_accepts_only_supported_layer_pairs_and_base_banks(self):
+        b=self.board()
+        for layer,code in ((0,0x4229),(0,0x4329),(0,0x4029),(1,0x4129),(1,0x4329),(2,0x4129),(2,0x4229),(3,0x4329),(0,0x4100),(0,0x41a5)):
+            self.assertEqual(b.transact(packet(5,layer,3,0,code>>8,code&255))[0],0xff,hex(code))
+        self.assertEqual(b.transact(packet(4,0,3,0))[4:6],bytes([0,0x39]))
+        self.set_lt(b,layer=2,code=0x4329)
+
+    def test_runtime_lt_shares_two_position_budget_with_mt_and_atomic_reject(self):
+        b=self.board();self.set_lt(b,slot=66);self.set_mt(b,slot=67,code=0x224a)
+        self.assertEqual(b.transact(packet(5,0,3,2,0x41,0x29))[0],0xff)
+        self.assertEqual(b.transact(packet(4,0,3,2))[4:6],bytes([0,0x16]))
+        # Same position cannot be LT in one layer and a different MT code in the other.
+        self.assertEqual(b.transact(packet(5,1,3,0,0x21,0x29))[0],0xff)
+
+    def test_copy_paste_cut_usages_are_accepted_and_reach_the_usb_report(self):
+        for usage in (0x7b,0x7c,0x7d):
+            b=self.board()
+            self.assertEqual(b.transact(packet(5,0,3,0,0,usage))[0],5)
+            self.assertEqual(b.transact(packet(4,0,3,0))[4:6],bytes([0,usage]))
+            b.matrix(PHYS);b.drain();self.assertIn(usage,[r[2] for r in b.reports]);b.matrix();b.drain()
+            self.assertEqual(b.held_keys(),set())
+
+    def test_runtime_lt_reserved_slots_reject_and_remove_restores_plain_key(self):
+        b=self.board()
+        for slot in (19,20,41,42,15,21):
+            r,c=divmod(slot,22)
+            self.assertEqual(b.transact(packet(5,0,r,c,0x41,0x29))[0],0xff)
+        self.set_lt(b)
+        self.assertEqual(b.transact(packet(5,0,3,0,0,0x39))[0],5)
+        b.matrix(PHYS);self.assertIn(0x39,b.held_keys());b.matrix()
+        self.assertEqual(b.held_keys(),set())
+
+    def test_runtime_mt_real_reconnect_bypass_restores_rom_with_broken_new_code(self):
+        b=self.board();self.set_mt(b)
+        b.write(0x4003c4,b'\0')
+        b.w32(0x806504,0xffff);b.w32(0x806514,0xffff)
+        b.call('th_gate_scan',1)
+        b.write(0x4003c4,b'\x01');b.poison()
+        b.matrix(PHYS)
+        self.assertEqual(b.read(b.sym['th_gate_state'],1),b'\x02')
+        self.assertEqual(b.read(0x401c34+66*4,3),bytes([2,0x39,0]))
+        self.assertIn(0x39,b.held_keys());self.assertEqual(b.mods(),0)
+        b.matrix();b.matrix(PHYS);self.assertIn(0x39,b.held_keys());b.matrix()
+        raw=bytes([8,0x0d])+bytes(14)+bytes([0x40])
+        b.output(raw,interface=1,report_id=8)
+        self.assertEqual(b.read(0x40122c,17),raw)
+
+    def test_runtime_mt_capacity_and_cross_layer_conflict_reject_atomically(self):
+        b=self.board();self.set_mt(b,slot=66);self.set_mt(b,slot=67,code=0x224a)
+        self.assertEqual(b.transact(packet(5,0,3,2,0x21,0x29))[0],0xff)
+        self.assertEqual(b.transact(packet(4,0,3,2))[4:6],bytes([0,0x16]))
+        self.assertEqual(b.transact(packet(5,1,3,0,0x22,0x29))[0],0xff)
+        self.assertEqual(b.transact(packet(5,1,3,0,0x21,0x29))[0],5)
+        # Bulk proposes a harmless change plus a third MT in one transaction.
+        off=(66*2);old=b.transact(packet(0x12,off>>8,off&255,6))[4:10]
+        self.assertEqual(b.transact(packet(0x13,off>>8,off&255,6,0x21,0x29,0x22,0x4a,0x21,0x29))[0],0xff)
+        self.assertEqual(b.transact(packet(0x12,off>>8,off&255,6))[4:10],old)
+
+    def test_runtime_mt_reserved_slots_and_gpio_holes_reject(self):
+        b=self.board()
+        for slot in (19,20,41,42,15,21):
+            r,c=divmod(slot,22)
+            self.assertEqual(b.transact(packet(5,0,r,c,0x21,0x29))[0],0xff)
+        for slot in (19,20,41,42):
+            r,c=divmod(slot,22)
+            self.assertEqual(b.transact(packet(5,0,r,c,0,4))[0],0xff)
+
+    def test_runtime_mt_pending_tap_blocks_remap_until_down_and_up_submit(self):
+        b=self.board();self.set_mt(b)
+        b.matrix(PHYS,submit=False);b.matrix(submit=False)
+        self.assertEqual(b.transact(packet(5,0,3,0,0,0x39))[0],0xff)
+        b.drain()
+        self.assertEqual(b.transact(packet(5,0,3,0,0,0x39))[0],5)
+        self.assertTrue(any(0x29 in r[2:7] for r in b.reports))
+
+    def test_runtime_mt_rapid_repeats_queue_complete_usb_pulses(self):
+        b=self.board();self.set_mt(b)
+        for _ in range(3):
+            b.matrix(PHYS,submit=False);b.matrix(submit=False)
+        b.drain()
+        self.assertEqual([0x29 in r[2:7] for r in b.reports],[True,False]*3)
+        self.assertEqual(b.held_keys(),set());self.assertEqual(b.mods(),0)
+
+    def test_runtime_two_mt_keys_serialize_queued_taps(self):
+        b=self.board();self.set_mt(b);self.set_mt(b,slot=67,code=0x222b)
+        for slot in (66,67):
+            b.matrix(slot,submit=False);b.matrix(submit=False)
+        b.drain()
+        downs=[r[2] for r in b.reports if r[2]]
+        self.assertEqual(downs,[0x29,0x2b]);self.assertEqual(b.mods(),0)
+        self.assertEqual(b.held_keys(),set())
+
+    def test_runtime_mt_banks_and_os_switch_require_release(self):
+        b=self.board();self.set_mt(b)
+        self.set_mt(b,layer=2,code=0x222b)
+        for _ in range(4):b.matrix(PHYS)
+        self.assertEqual(b.mods(),1)
+        b.write(b.options+9,b'\x01');b.call('via_gate_loader')
+        for _ in range(8):b.matrix(PHYS)
+        self.assertEqual(b.mods(),0)
+        b.matrix()
+        for k in range(2):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',4))
+        for _ in range(4):b.matrix(PHYS)
+        self.assertEqual(b.mods(),2);b.matrix();self.assertEqual(b.mods(),0)
+
+    def test_real_get_descriptor_returns_unnumbered_raw_hid(self):
+        b=self.board()
+        b.setup(struct.pack('<BBHHH',0x81,6,0x2200,2,255))
+        self.assertEqual(b.tx[0][-1],RAW_DESCRIPTOR)
+        self.assertNotIn(b'\x85',RAW_DESCRIPTOR)
+
+    def test_real_set_report_fifo_to_protocol_to_ep3(self):
+        b=self.board()
+        self.assertEqual(b.transact(packet(1)),packet(1,0,13))
+        self.assertEqual(b.transact(packet(2,6)),packet(2,6,0,0,0,9))
+        self.assertEqual(b.transact(packet(0x11)),packet(0x11,4))
+        self.assertEqual(len(b.tx[1]),0)
+
+    def test_opcode_0d_cannot_reach_stock_update_queue(self):
+        b=self.board();b.write(0x40027c,b'\0'*4);b.write(0x40122c,b'\xa5'*17)
+        self.assertEqual(b.transact(packet(0x0d)),packet(0x0d,0,0xc0))
+        self.assertEqual(b.read(0x40027c,4),bytes(4))
+        self.assertEqual(b.read(0x40122c,17),b'\xa5'*17)
+
+    def test_legacy_update_entry_still_reaches_original_vendor_handler(self):
+        b=self.board()
+        raw=bytes([8,0x0d])+bytes(14)+bytes([0x40])
+        b.output(raw,interface=1,report_id=8)
+        self.assertEqual(b.read(0x40027c,1),b'\x01')
+        self.assertEqual(b.read(0x40122c,17),raw)
+        self.assertEqual(b.tx[3],[])
+
+    def test_ram_write_changes_actual_stock_key_processing(self):
+        b=self.board()
+        self.assertEqual(b.transact(packet(4,0,3,1)),packet(4,0,3,1,0,4))
+        self.assertEqual(b.transact(packet(5,0,3,1,0,5))[0],5)
+        self.assertEqual(b.read(0x401c34+67*4,4),bytes.fromhex('02 05 00 4e'))
+        b.matrix(67)
+        self.assertIn(5,b.held_keys());self.assertNotIn(4,b.held_keys())
+        b.matrix()
+        self.assertEqual(b.held_keys(),set())
+
+    def test_caps_is_factory_caps_lock_and_can_be_remapped_and_restored(self):
+        for layer in (0,2):
+            b=self.board()
+            b.write(b.options+9,bytes([layer//2]));b.call('via_gate_loader')
+            self.assertEqual(b.transact(packet(4,layer,3,0))[4:6],bytes.fromhex('00 39'))
+            b.matrix(PHYS)
+            self.assertIn(0x39,b.held_keys())
+            self.assertEqual(b.mods(),0)
+            for _ in range(210):b.matrix(PHYS)
+            self.assertIn(0x39,b.held_keys());self.assertEqual(b.mods(),0)
+            b.matrix()
+            self.assertEqual(b.transact(packet(5,layer,3,0,0,0xe0))[0],5)
+            b.matrix(PHYS);self.assertEqual(b.mods(),1)
+            self.assertNotIn(0x39,b.held_keys());b.matrix()
+            self.assertEqual(b.transact(packet(5,layer,3,0,0,0x39))[0],5)
+            b.matrix(PHYS);self.assertIn(0x39,b.held_keys());b.matrix()
+            self.assertEqual(b.held_keys(),set())
+
+    def test_all_factory_banks_and_unused_slots_are_unmodified_in_rom(self):
+        b=self.board()
+        for at in TABLES:
+            self.assertEqual(self.image[at:at+0x210],b.payload[at-0x2000:at-0x2000+0x210])
+        self.assertLessEqual(self.manifest['sections'][0]['size'],0x140)   # gate may use 0x21c0..0x2300
+
+    def test_mutation_rejected_while_any_real_key_is_active(self):
+        b=self.board();b.matrix(68)
+        self.assertEqual(b.transact(packet(5,0,3,0,0,0xe0))[0],0xff)
+        b.matrix()
+        self.assertEqual(b.transact(packet(5,0,3,0,0,0xe0))[0],5)
+
+    def test_four_volatile_banks_survive_os_switch(self):
+        b=self.board()
+        b.transact(packet(5,0,3,1,0,5));b.transact(packet(5,2,3,1,0,6))
+        self.assertEqual(b.read(0x401c34+67*4+1,1),b'\x05')
+        b.write(b.options+9,b'\x01');b.call('via_gate_loader')
+        self.assertEqual(b.read(0x401c34+67*4+1,1),b'\x06')
+        b.write(b.options+9,b'\0');b.call('via_gate_loader')
+        self.assertEqual(b.read(0x401c34+67*4+1,1),b'\x05')
+
+    def test_endpoint_busy_preserves_response_until_host_ack(self):
+        b=self.board();b.csr[3]=1
+        b.output(packet(1));b.poll()
+        self.assertEqual(b.tx[3],[])
+        b.csr[3]=0;b.poll();self.assertEqual(b.receive(),packet(1,0,13))
+
+    def test_bounded_isr_queue_preserves_request_order(self):
+        b=self.board()
+        for cmd in [packet(1),packet(0x11),packet(0x0d)]:b.output(cmd)
+        for expected in [packet(1,0,13),packet(0x11,4),packet(0x0d,0,0xc0)]:
+            b.poll();self.assertEqual(b.receive(),expected)
+
+    def test_bypass_with_broken_new_code_preserves_stock_restore_path(self):
+        b=self.board();b.write(b.sym['th_gate_state'],b'\x02');b.poison()
+        b.call('via_gate_loader')
+        b.call('via_gate_poll')
+        raw=bytes([8,0x0d])+bytes(14)+bytes([0x40])
+        b.output(raw,interface=1,report_id=8)
+        self.assertEqual(b.read(0x40122c,17),raw)
+        b.matrix(PHYS)
+        self.assertIn(0x39,b.held_keys())
+        self.assertEqual(b.mods(),0)
+
+    def test_stale_reply_is_not_sent_after_usb_generation_changes(self):
+        b=self.board();b.csr[3]=1
+        b.output(packet(0x11));b.poll()
+        self.assertEqual(b.tx[3],[])
+        state=b.sym['th_gate_state']
+        b.write(state+2,struct.pack('<H',1));b.csr[3]=0
+        b.output(packet(1));b.poll()
+        self.assertEqual(b.receive(),packet(1,0,13))
+
+    def test_usb_reconnect_reloads_edited_banks_and_discards_old_queued_commands(self):
+        b=self.board();b.transact(packet(5,0,3,1,0,5))
+        b.output(packet(0x11))
+        b.write(b.sym['th_gate_state']+2,struct.pack('<H',1))
+        # Simulate stock reload while in bypass; reconnect must restore volatile edits.
+        b.call(0x196cc)
+        self.assertEqual(b.read(0x401c34+67*4+1,1),b'\x04')
+        b.output(packet(1));b.poll()
+        self.assertEqual(b.receive(),packet(1,0,13))
+        self.assertEqual(b.read(0x401c34+67*4+1,1),b'\x05')
+
+    def test_real_client_probe_and_roundtrip_against_firmware_usb_path(self):
+        from via_device import Client
+        b=self.board()
+        class Device:
+            def open_path(self,path):pass
+            def get_report_descriptor(self):return RAW_DESCRIPTOR
+            def close(self):pass
+            def write(self,data):
+                assert len(data)==33 and data[0]==0
+                b.output(data[1:]);b.poll();return len(data)
+            def read(self,n,timeout):return b.receive()
+        class Hid:
+            def enumerate(self,*ids):return [{'path':b'raw','usage_page':0xff60,'usage':0x61,'product_string':'Flow84@Lofree'}]
+            def device(self):return Device()
+        client=Client(Hid())
+        self.assertEqual(client.probe()['protocol'],13)
+        self.assertEqual(client.probe()['win_caps'],'0x39')
+        result=client.roundtrip(0,3,1,5)
+        self.assertEqual(result['before'],'0x4');self.assertEqual(result['temporary'],'0x5')
+        self.assertEqual(b.read(0x401c34+67*4+1,1),b'\x04')
+
+    def test_legacy_mouse_sender_cannot_emit_short_packets_on_raw_endpoint(self):
+        b=self.board()
+        b.write(0x4003d0,bytes([1,1])+bytes(6))
+        b.write(0x4003bc,b'\x01');b.write(0x4003b0,b'\0');b.write(0x4003c4,b'\x01')
+        b.write(0x401080+0x1a,b'\0\0')
+        b.call(0x1f99c)
+        self.assertEqual(b.tx[3],[])
+        self.assertEqual(b.transact(packet(1)),packet(1,0,13))
+
+    def test_only_pointing_interface_descriptor_changes(self):
+        b=self.board()
+        for at,n in [(0x227cc,77),(0x22819,106)]:
+            self.assertEqual(self.image[at:at+n],b.payload[at-0x2000:at-0x2000+n])
+        self.assertLessEqual(self.manifest['sections'][0]['size'],0x140)
+        self.assertLess(int(self.manifest['bss_end'],16),0x406000)
+
+if __name__=='__main__':unittest.main()

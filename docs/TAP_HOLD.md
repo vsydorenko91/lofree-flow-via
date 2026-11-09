@@ -1,0 +1,36 @@
+# Mod-tap and layer-tap
+
+| Keycode | Meaning |
+|---|---|
+| `MT(mods, kc)` `0x2000..0x3fff` | tap = `kc` (a normal keyboard usage), hold = the modifiers |
+| `LT(1, kc)` on a Windows base layer, `LT(3, kc)` on a Mac base layer (`0x4000 | layer<<8 | kc`) | tap = `kc`, hold = the Fn layer of the same pair |
+
+Limits: at most **two** such positions per Windows/Mac pair (shared between MT and
+LT). A position that is mod-/layer-tap on base and Fn must use the same code. An
+invalid request (third key, empty modifier mask, consumer tap, LT on the Fn layer or
+with an empty key, other layers) is rejected before RAM changes.
+
+## Behavior
+
+* Hold is chosen when another key is pressed while the key is pending, or when the
+  timeout expires. For **layer-tap, pressing a modifier does not count** as "another
+  key" — `Ctrl+Space` with `Space` on LT still sends the chord (this was a real bug:
+  the language switch stopped working).
+* The tap is emitted when the key is released. This is inherent to tap-hold and gives
+  a small typing delay; put these on rarely typed keys (Caps Lock, a modifier cluster)
+  rather than on letters or Space if the delay bothers you.
+* Timeout is a VIA setting (Settings → Typing): Normal 200, Short 120, Long 320,
+  Very long 500 *processing passes*. Units are matrix passes, not milliseconds; the
+  `rate` command of `tools/device_check.py` prints passes per second.
+* The pending key is never lost: taps queue until both USB reports (down and up)
+  were really submitted; macros own the report while they play; leaving USB mode or
+  switching OS discards queued taps.
+
+## Implementation notes
+
+The engine (`firmware/th.c`) wraps every stock matrix-scan call (13 call sites),
+keeps a private shadow matrix and synthesizes presses on four otherwise unused GPIO
+positions (columns 19/20 and 41/42 of the matrix) that appear in the keymap as the
+tap key and the hold action. These slots cannot be remapped from VIA. Edits are
+applied only when physical and synthetic input are idle. The current Fn state is
+evaluated before choosing a layer, including Fn+key in the same scan.

@@ -1,0 +1,309 @@
+{
+  "name": "Lofree Flow84",
+  "vendorId": "0x05AC",
+  "productId": "0x024F",
+  "matrix": {
+    "rows": 6,
+    "cols": 22
+  },
+  "layouts": {
+    "keymap": [
+      [
+        "0,0",
+        "0,1",
+        "0,2",
+        "0,3",
+        "0,4",
+        "0,5",
+        "0,6",
+        "0,7",
+        "0,8",
+        "0,9",
+        "0,10",
+        "0,11",
+        "1,12",
+        "0,12",
+        "1,13",
+        "2,13"
+      ],
+      [
+        "1,0",
+        "1,1",
+        "1,2",
+        "1,3",
+        "1,4",
+        "1,5",
+        "1,6",
+        "1,7",
+        "1,8",
+        "1,9",
+        "1,10",
+        "2,10",
+        "1,11",
+        {
+          "w": 2
+        },
+        "2,12",
+        "1,14"
+      ],
+      [
+        {
+          "w": 1.5
+        },
+        "2,0",
+        "2,1",
+        "2,2",
+        "2,3",
+        "2,4",
+        "2,5",
+        "2,6",
+        "2,7",
+        "2,8",
+        "2,9",
+        "3,10",
+        "2,11",
+        "3,12",
+        {
+          "w": 1.5
+        },
+        "4,12",
+        "2,14"
+      ],
+      [
+        {
+          "w": 1.75
+        },
+        "3,0",
+        "3,1",
+        "3,2",
+        "3,3",
+        "3,4",
+        "3,5",
+        "3,6",
+        "3,7",
+        "3,8",
+        "3,9",
+        "4,10",
+        "3,11",
+        {
+          "w": 2.25
+        },
+        "5,12",
+        "3,14"
+      ],
+      [
+        {
+          "w": 2.25
+        },
+        "4,0",
+        "4,1",
+        "4,2",
+        "4,3",
+        "4,4",
+        "4,5",
+        "4,6",
+        "4,7",
+        "4,8",
+        "4,9",
+        "4,11",
+        {
+          "w": 1.75
+        },
+        "5,11",
+        "4,14",
+        "3,13"
+      ],
+      [
+        {
+          "w": 1.25
+        },
+        "5,0",
+        {
+          "w": 1.25
+        },
+        "5,1",
+        {
+          "w": 1.25
+        },
+        "5,2",
+        {
+          "w": 6.25
+        },
+        "5,5",
+        "5,7",
+        "5,8",
+        "5,10",
+        "4,13",
+        "5,13",
+        "5,14"
+      ]
+    ]
+  },
+  "customKeycodes": [
+    {
+      "name": "Bluetooth 1 (05:0000)",
+      "title": "Stock Bluetooth slot 1; hold may enter pairing. Retain/restore at original slot only.",
+      "shortName": "BT1"
+    },
+    {
+      "name": "Bluetooth 2 (05:0001)",
+      "title": "Stock Bluetooth slot 2; hold may enter pairing. Retain/restore at original slot only.",
+      "shortName": "BT2"
+    },
+    {
+      "name": "Bluetooth 3 (05:0002)",
+      "title": "Stock Bluetooth slot 3; hold may enter pairing. Retain/restore at original slot only.",
+      "shortName": "BT3"
+    },
+    {
+      "name": "Factory lighting mode (unverified) (05:0004)",
+      "title": "Firmware cycles a 3-state index. Physical effect on this white-only Flow84 is unverified. Stock handler saves settings. Retain/restore at original slot only.",
+      "shortName": "Mode?"
+    },
+    {
+      "name": "Factory color index (unsupported) (05:0007)",
+      "title": "Firmware-only color index 0..7; no RGB key backlight on this white-only Flow84. Physical side-light behavior is unverified. Stock handler saves settings. Retain/restore at original slot only.",
+      "shortName": "Color?"
+    },
+    {
+      "name": "Backlight brightness up (05:000F)",
+      "title": "Raises stock brightness index up to 4. Stock handler saves settings. Retain/restore at original slot only.",
+      "shortName": "BL+"
+    },
+    {
+      "name": "Backlight brightness down (05:0010)",
+      "title": "Lowers stock brightness index down to 0. Stock handler saves settings. Retain/restore at original slot only.",
+      "shortName": "BL-"
+    },
+    {
+      "name": "Windows mode (05:0018)",
+      "title": "Selects stock Windows OS bank. Stock handler changes saved settings. Retain/restore at original slot only.",
+      "shortName": "WinOS"
+    },
+    {
+      "name": "Mac mode (05:0019)",
+      "title": "Selects stock Mac OS bank. Stock handler changes saved settings. Retain/restore at original slot only.",
+      "shortName": "MacOS"
+    },
+    {
+      "name": "Factory macro 4: Win+Tab (09:0004)",
+      "title": "Plays the existing stock Win+Tab macro; this is not an editable VIA macro. Retain/restore at original slot only.",
+      "shortName": "WinTab"
+    }
+  ],
+  "menus": [
+    {
+      "label": "Lighting",
+      "content": [
+        {
+          "label": "Backlight",
+          "content": [
+            {
+              "label": "Key backlight level (0 = off)",
+              "type": "range",
+              "options": [
+                0,
+                4
+              ],
+              "content": [
+                "id_flow_backlight",
+                0,
+                6
+              ]
+            },
+            {
+              "label": "Side RGB color",
+              "type": "dropdown",
+              "options": [
+                "Red",
+                "Green",
+                "Yellow",
+                "Turquoise",
+                "Cyan",
+                "Blue",
+                "Purple",
+                "White"
+              ],
+              "content": [
+                "id_flow_rgb_color",
+                0,
+                10
+              ]
+            },
+            {
+              "label": "Side lighting",
+              "type": "dropdown",
+              "options": [
+                "On",
+                "Off"
+              ],
+              "content": [
+                "id_flow_light_mode",
+                0,
+                11
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Settings",
+      "content": [
+        {
+          "label": "Typing",
+          "content": [
+            {
+              "label": "Tap-hold timeout (mod-tap / layer-tap)",
+              "type": "dropdown",
+              "options": [
+                "Normal",
+                "Short",
+                "Long",
+                "Very long"
+              ],
+              "content": [
+                "id_flow_tap_term",
+                0,
+                14
+              ]
+            }
+          ]
+        },
+        {
+          "label": "Profile",
+          "content": [
+            {
+              "label": "Save to keyboard",
+              "type": "button",
+              "options": [
+                1
+              ],
+              "content": [
+                "id_flow_save_now",
+                0,
+                1
+              ]
+            },
+            {
+              "label": "Unsaved changes (read-only)",
+              "type": "toggle",
+              "content": [
+                "id_flow_dirty",
+                0,
+                13
+              ]
+            },
+            {
+              "label": "Note",
+              "type": "label",
+              "content": [
+                "Firmware updates clear the saved profile. Export before updating."
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: pip install -r requirements.txt
+      - run: python tools/build.py
+      - run: python tools/make_web.py --version "${GITHUB_SHA::7}"
+      - run: PYTHONPATH=tools python -m unittest discover -s tests
+      - run: node web/test-core.mjs
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: web }
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    environment: { name: github-pages, url: '${{ steps.d.outputs.page_url }}' }
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4

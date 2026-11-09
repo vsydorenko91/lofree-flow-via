@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow84 VIA Flasher</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fafaf9; --fg:#1c1917; --mut:#6b6560; --card:#fff; --line:#e4e0db;
+          --acc:#0f6b5c; --accfg:#fff; --warn:#8a4b00; --warnbg:#fff4e0; --bad:#a32020; --ok:#15703a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141413; --fg:#ecebe8; --mut:#9a948c; --card:#1d1c1a; --line:#33312d;
+          --acc:#3fb59f; --accfg:#06241e; --warn:#f0b35a; --warnbg:#2b2112; --bad:#ff8a80; --ok:#6fd49a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;
+         padding:24px 16px 64px; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 28px 0 10px; }
+  p { margin: 8px 0; }
+  .sub { color: var(--mut); margin-bottom: 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .notice { background:var(--warnbg); color:var(--warn); border-radius:10px; padding:12px 16px; }
+  .notice ul { margin: 6px 0 0 18px; padding: 0; }
+  .choices { display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .choice { cursor:pointer; display:block; }
+  .choice input { position:absolute; opacity:0; }
+  .choice .card { display:block; height:100%; }
+  .choice small { display:block; margin-bottom: 6px; }
+  .choice .hash { display:block; }
+  .choice input:checked + .card { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc); }
+  .choice input:focus-visible + .card { outline: 2px solid var(--acc); outline-offset: 2px; }
+  .choice b { display:block; margin-bottom: 4px; }
+  .choice small { color: var(--mut); }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg);
+           padding: 9px 16px; cursor: pointer; }
+  button.primary { background: var(--acc); color: var(--accfg); border-color: var(--acc); font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top: 12px; }
+  label.check { display:flex; gap:8px; align-items:flex-start; margin-top: 12px; }
+  progress { width: 100%; height: 14px; accent-color: var(--acc); margin-top: 12px; }
+  #status { margin-top: 12px; font-weight: 600; }
+  #status.ok { color: var(--ok); } #status.bad { color: var(--bad); }
+  pre { background: var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:12px 0 0;
+        max-height: 220px; overflow:auto; font: 12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; white-space: pre-wrap; }
+  code { font: 13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+  a { color: var(--acc); }
+  .hash { color: var(--mut); font-size: 12px; word-break: break-all; }
+  #unsupported { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Flow84 VIA Flasher</h1>
+  <p class="sub">Install VIA support on the Lofree Flow84, or go back to the stock firmware. Runs entirely in your browser over USB (WebHID).</p>
+
+  <div id="unsupported" class="notice"><b>This browser cannot talk to the keyboard.</b> Open this page in Chrome, Edge, Brave or Opera on a desktop.</div>
+
+  <div class="notice">
+    <b>Before you start</b>
+    <ul>
+      <li>Use a USB-C <b>cable</b>, with the keyboard's switch on <b>USB</b> (not Bluetooth).</li>
+      <li>Flashing <b>erases the saved profile</b> (remaps, macros, lighting). Export your VIA layout first.</li>
+      <li>Do not unplug during the upload (about a minute). If it is interrupted, the keyboard stays in its bootloader and you can simply run the flash again.</li>
+      <li>This is unofficial, third-party firmware. You flash at your own risk.</li>
+    </ul>
+  </div>
+
+  <h2>1. What do you want to flash?</h2>
+  <div class="choices" role="radiogroup">
+    <label class="choice"><input type="radio" name="image" value="via" checked>
+      <span class="card"><b>VIA firmware</b><small>Remap keys, macros, mod-tap / layer-tap, side lighting, saved on the keyboard.</small>
+      <span class="hash" id="hash-via"></span></span></label>
+    <label class="choice"><input type="radio" name="image" value="stock">
+      <span class="card"><b>Restore stock firmware</b><small>Byte-identical vendor firmware v2.52. Removes VIA support.</small>
+      <span class="hash" id="hash-stock"></span></span></label>
+  </div>
+
+  <h2>2. Flash</h2>
+  <div class="card">
+    <label class="check"><input type="checkbox" id="ack"> <span>I understand that this replaces the keyboard firmware and erases its saved profile.</span></label>
+    <div class="row">
+      <button class="primary" id="go" disabled>Connect keyboard and flash</button>
+      <button id="boot" hidden>Select bootloader device</button>
+    </div>
+    <progress id="bar" value="0" max="1" hidden></progress>
+    <div id="status"></div>
+    <pre id="log" hidden></pre>
+  </div>
+
+  <h2>After installing VIA</h2>
+  <div class="card">
+    <p>Open <a href="https://usevia.app" target="_blank" rel="noopener">usevia.app</a>, go to <b>Settings</b>, turn on <b>Show Design tab</b>,
+    then in <b>Design</b> load <a href="flow84.json" download>flow84.json</a> and authorize the Flow84. Use <b>Settings → Profile → Save to keyboard</b> to keep your changes across power cycles.</p>
+    <p class="sub">Stuck in the bootloader or the keyboard does not enumerate? Run the flash again; the bootloader accepts a new upload at any time. See docs/RECOVERY.md in the project repository.</p>
+  </div>
+  <p class="sub" style="margin-top:28px">Unofficial project, not affiliated with Lofree. Developed with the help of AI (Claude) and tested on real hardware. Open source (MIT).</p>
+</main>
+
+<script type="module">
+import { buildReports, upload, sha256Hex, NORMAL, BOOT, RESET_REPORT_ID, RESET_DATA, STOCK_SHA256 } from './flasher-core.js';
+
+const $ = (id) => document.getElementById(id);
+const logEl = $('log'), statusEl = $('status'), bar = $('bar'), go = $('go'), bootBtn = $('boot'), ack = $('ack');
+const log = (m) => { logEl.hidden = false; logEl.textContent += m + '\n'; logEl.scrollTop = logEl.scrollHeight; };
+const setStatus = (m, cls = '') => { statusEl.textContent = m; statusEl.className = cls; };
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+let manifest, busy = false;
+
+if (!('hid' in navigator)) { $('unsupported').style.display = 'block'; }
+
+async function load() {
+  manifest = await (await fetch('firmware/manifest.json', { cache: 'no-cache' })).json();
+  for (const key of ['via', 'stock']) $('hash-' + key).textContent = `SHA-256 ${manifest.images[key].sha256.slice(0, 16)}…`;
+  refresh();
+}
+const refresh = () => { go.disabled = busy || !ack.checked || !('hid' in navigator) || !manifest; };
+ack.addEventListener('change', refresh);
+
+async function fetchImage(key) {
+  const meta = manifest.images[key];
+  const data = new Uint8Array(await (await fetch('firmware/' + meta.file, { cache: 'no-cache' })).arrayBuffer());
+  if (data.length !== meta.size || await sha256Hex(data) !== meta.sha256) throw new Error('image does not match its published hash');
+  if (key === 'stock' && meta.sha256 !== STOCK_SHA256) throw new Error('stock image hash is not the known vendor image');
+  return data;
+}
+
+// A WebHID device wrapped as the transport used by upload(): queue of input reports with timeouts.
+function transportFor(device) {
+  const queue = [], waiters = [];
+  device.addEventListener('inputreport', (e) => {
+    const r = new Uint8Array(1 + e.data.byteLength);
+    r[0] = e.reportId; r.set(new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength), 1);
+    const w = waiters.shift();
+    if (w) { clearTimeout(w.timer); w.resolve(r); } else queue.push(r);
+  });
+  return {
+    send: (r) => device.sendReport(r[0], r.subarray(1)),
+    receive: (ms) => queue.length ? Promise.resolve(queue.shift()) : new Promise((resolve, reject) => {
+      const w = { resolve, timer: setTimeout(() => { waiters.splice(waiters.indexOf(w), 1); reject(new Error('bootloader response timeout')); }, ms) };
+      waiters.push(w);
+    }),
+  };
+}
+
+async function findBoot() {
+  const known = (await navigator.hid.getDevices()).find(d => d.vendorId === BOOT.vendorId && d.productId === BOOT.productId);
+  return known || null;
+}
+
+async function pickBootloader() {
+  const found = await navigator.hid.requestDevice({ filters: [{ vendorId: BOOT.vendorId, productId: BOOT.productId }] });
+  return found[0] || null;
+}
+
+async function enterBootloader(device) {
+  if (device.productName !== NORMAL.product) throw new Error('That is not a Flow84 (Flow84@Lofree).');
+  const col = device.collections.find(c => c.usagePage === NORMAL.usagePage && c.usage === NORMAL.usage &&
+    c.outputReports.some(r => r.reportId === RESET_REPORT_ID));
+  if (!col) throw new Error('The keyboard\'s update interface was not found.');
+  await device.open();
+  log('Asking the keyboard to enter update mode…');
+  await device.sendReport(RESET_REPORT_ID, RESET_DATA);
+  await sleep(500);
+  try { await device.close(); } catch { /* the device is already re-enumerating */ }
+}
+
+async function waitForBoot(timeoutMs) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) { const d = await findBoot(); if (d) return d; await sleep(250); }
+  return null;
+}
+
+async function flash() {
+  busy = true; refresh(); logEl.textContent = ''; bar.hidden = false; bar.value = 0; bootBtn.hidden = true;
+  try {
+    const key = document.querySelector('input[name=image]:checked').value;
+    setStatus('Checking the firmware image…');
+    const data = await fetchImage(key);
+    const reports = buildReports(data);
+    log(`${manifest.images[key].label}: ${data.length} bytes, ${reports.length - 1} packets, SHA-256 ${manifest.images[key].sha256}`);
+
+    setStatus('Choose your keyboard in the browser prompt…');
+    let boot = await findBoot();
+    if (!boot) {
+      const picked = await navigator.hid.requestDevice({ filters: [
+        { vendorId: NORMAL.vendorId, productId: NORMAL.productId, usagePage: NORMAL.usagePage, usage: NORMAL.usage },
+        { vendorId: BOOT.vendorId, productId: BOOT.productId }] });
+      const device = picked[0];
+      if (!device) throw new Error('No device selected.');
+      if (device.vendorId === BOOT.vendorId) boot = device;
+      else {
+        setStatus('Entering update mode…');
+        await enterBootloader(device);
+        boot = await waitForBoot(8000);
+        if (!boot) {
+          setStatus('The keyboard restarted in update mode. Click “Select bootloader device” and choose it.');
+          bootBtn.hidden = false;
+          boot = await new Promise((resolve, reject) => {
+            bootBtn.onclick = async () => { try { const d = await pickBootloader(); d ? resolve(d) : reject(new Error('No device selected.')); } catch (e) { reject(e); } };
+          });
+          bootBtn.hidden = true;
+        }
+      }
+    }
+    await boot.open();
+    try {
+      setStatus('Flashing… do not unplug the keyboard.');
+      await upload(transportFor(boot), reports, log, (p) => { bar.value = p; });
+    } finally { try { await boot.close(); } catch { /* rebooting */ } }
+    bar.value = 1;
+    setStatus(key === 'via'
+      ? 'Done. The keyboard restarts with VIA support (it may take a few seconds to reappear).'
+      : 'Done. Stock firmware restored; the keyboard restarts.', 'ok');
+  } catch (e) {
+    setStatus('Stopped: ' + (e && e.message || e) + ' — the keyboard is safe in its bootloader; run the flash again.', 'bad');
+    log(String(e && e.stack || e));
+  } finally { busy = false; refresh(); }
+}
+go.addEventListener('click', flash);
+load().catch((e) => setStatus('Could not load the firmware list: ' + e.message, 'bad'));
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+out/
+local/
+.playwright-mcp/
+web/firmware/
+web/flow84.json
+.DS_Store

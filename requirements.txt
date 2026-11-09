@@ -1,0 +1,5 @@
+ziglang
+unicorn
+capstone
+pyelftools
+hidapi
