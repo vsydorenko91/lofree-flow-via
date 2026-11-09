@@ -75,12 +75,16 @@ class PersistenceDevice(unittest.TestCase):
 
     def test_lighting_color_and_mode_are_ram_only_and_validated(self):
         b=self.board()
-        for cid,hi,addr,native in ((10,7,0x4018da,{0:0,7:7}),(11,1,0x4018ba,{0:0,1:2})):
-            for v in (0,hi):
+        for cid,hi,addr,native in ((10,7,0x4018da,{0:0,7:7}),(11,2,0x4018ba,{0:0,1:1,2:2})):
+            for v in native:
                 self.assertEqual(b.transact(packet(7,0,cid,v))[0],7)
                 self.assertEqual(b.transact(packet(8,0,cid))[3],v)
                 self.assertEqual(b.read(addr,1)[0],native[v])
             self.assertEqual(b.transact(packet(7,0,cid,hi+1))[0],0xff)
+        # Effect byte and restart flag follow the stock mode key: steady 0x30, breathing 0x31, off 0xf0.
+        for v,effect in ((0,0x30),(1,0x31),(2,0xf0)):
+            b.transact(packet(7,0,11,v))
+            self.assertEqual(b.read(0x4018b9,1)[0],effect);self.assertEqual(b.read(0x4018c7,1)[0],1)
         self.assertEqual(b.ops,[])
 
     def test_tap_hold_timeout_preset_is_validated_applied_and_persisted(self):
@@ -124,7 +128,7 @@ class PersistenceDevice(unittest.TestCase):
         self.assertEqual(fresh.transact(packet(8,0,6))[3],2)
         self.assertEqual(fresh.read(0x4018c2,1)[0],2)
         self.assertEqual(fresh.transact(packet(8,0,10))[3],5);self.assertEqual(fresh.transact(packet(8,0,11))[3],1)
-        self.assertEqual(fresh.read(0x4018da,1)[0],5);self.assertEqual(fresh.read(0x4018ba,1)[0],2)
+        self.assertEqual(fresh.read(0x4018da,1)[0],5);self.assertEqual(fresh.read(0x4018ba,1)[0],1)
         fresh.matrix(67);self.assertIn(5,fresh.held_keys());fresh.matrix()
         fresh.write(fresh.options+9,b'\x01');fresh.call('via_gate_loader');fresh.matrix()
         fresh.matrix(66);fresh.matrix();fresh.drain()
@@ -203,12 +207,32 @@ class PersistenceDevice(unittest.TestCase):
         self.assertEqual(self.save(b)[0],0xff);self.assertEqual(b.ops,[])
         b.drain();self.assertEqual(self.save(b)[0],7)
 
-    def test_boot_bypass_never_loads_saved_map(self):
+    def test_key_held_at_boot_no_longer_bypasses_and_saved_map_loads(self):
         b=self.board();self.change(b);self.save(b)
-        bypass=self.board(b.nv,boot_key=66)
-        self.assertEqual(bypass.read(bypass.sym['th_gate_state'],1),b'\x02')
-        self.assertEqual(bypass.read(0x401c34+67*4+1,1),b'\x04')
-        self.assertEqual(bypass.nv_reads,0);self.assertEqual(bypass.ops,[])
+        held=self.board(b.nv,boot_key=66)
+        self.assertEqual(held.read(held.sym['th_gate_state'],1),b'\x01')
+        held.matrix();held.drain();held.poll()        # the profile loads at the first idle moment
+        self.assertEqual(held.read(0x401c34+67*4+1,1),b'\x05')
+        self.assertEqual(held.ops,[])
+
+    def test_unsaved_indicator_covers_lighting_and_typing_settings(self):
+        b=self.board()
+        self.assertEqual(b.transact(packet(8,0,13))[3],0)
+        for cid,v in ((6,1),(10,3),(11,1),(14,2)):
+            self.assertEqual(b.transact(packet(7,0,cid,v))[0],7)
+            self.assertEqual(b.transact(packet(8,0,13))[3],1,cid)
+            self.assertEqual(self.status(b),b'Unsaved changes')
+            self.assertEqual(self.save(b)[0],7)
+            self.assertEqual(b.transact(packet(8,0,13))[3],0,cid)
+            self.assertEqual(self.status(b),b'Saved')
+        # Changing a value back to the saved one clears the indicator without a save.
+        b.transact(packet(7,0,6,4));self.assertEqual(b.transact(packet(8,0,13))[3],1)
+        b.transact(packet(7,0,6,1));self.assertEqual(b.transact(packet(8,0,13))[3],0)
+
+    def test_firmware_version_is_reported(self):
+        b=self.board()
+        self.assertEqual(b.transact(packet(2,4))[2:6],bytes([0,0,2,0]))
+        self.assertEqual(b.transact(packet(8,0,15))[3],2)
 
     def test_idle_after_edit_and_save_emits_no_unsolicited_usb_packets(self):
         b=self.board();self.change(b)

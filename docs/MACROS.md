@@ -19,7 +19,7 @@ player**; only the bytecode compiler is new.
 ## Implementation
 
 * `macro_table` is a RAM table: the 19 factory records are copied from ROM by the
-  gate loader (also in bypass mode), followed by 96 user records. Three stock
+  gate loader (also before the gate is active), followed by 96 user records. Three stock
   references (`0x1D304`, `0x1EE3C`, `0x1A024`) are redirected to it. User lengths go
   to `0x401C0D..`; VIA `M0..M7` = type 9, values 6..13. Factory macros 1..5 are not
   editable.

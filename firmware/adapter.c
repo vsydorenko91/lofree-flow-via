@@ -4,6 +4,7 @@
 #include "th_runtime.h"
 #include "dstore.h"
 #include "macro.h"
+#include "version.h"
 _Static_assert(MACRO_COUNT==FLOW_VIA_MACRO_MAX,"macro count mismatch");
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -258,10 +259,17 @@ static void set_level(unsigned v)
     *LEVEL_RAM=v;*(volatile u8 *)0x401218u=v;*(volatile u8 *)0x4018c3u=1;
 }
 #define LIGHT_ST ((volatile u8 *)0x4018a8u)
+/* "Unsaved" = keys/macros edited, or lighting/typing settings differ from the saved (or boot) state. */
+static u8 base_level,base_light;
+static u8 cur_level(void){return *LEVEL_RAM>4?4:*LEVEL_RAM;}
+static u8 cur_light(void){return 0x80|term_index<<5|(LIGHT_ST[0x12]&3)<<3|(LIGHT_ST[0x32]&7);}
+static int unsaved(void){return dirty||cur_level()!=base_level||cur_light()!=base_light;}
 static void set_color(unsigned v){LIGHT_ST[0x32]=v;*(volatile u8 *)0x401219u=v;*(volatile u8 *)0x4018c3u=1;}
 static void set_mode(unsigned v)
 {
-    LIGHT_ST[0x12]=v;LIGHT_ST[0x11]=*((const u8 *)0x2296cu+v);
+    /* Same steps as the stock mode key (0x1ada8): mode, effect byte from the stock table
+     * (steady 0x30, breathing 0x31, off 0xf0) and the "restart effect" flag at +0x1f. */
+    LIGHT_ST[0x12]=v;LIGHT_ST[0x11]=*((const u8 *)0x2296cu+v);LIGHT_ST[0x1f]=1;
     *(volatile u8 *)0x40121au=v;*(volatile u8 *)0x4018c3u=1;
 }
 static int profile_valid(const ds_entry *list,unsigned count)
@@ -300,13 +308,12 @@ static int save_profile(void)
         if(n==DS_MAX_ENTRIES){save_failed=1;save_stage=9;return 0;}   /* too many changed keys */
         want[n].pos=i;want[n++].code=code;
     }
-    level=*LEVEL_RAM>4?4:*LEVEL_RAM;
-    light=0x80|term_index<<5|(LIGHT_ST[0x12]&3)<<3|(LIGHT_ST[0x32]&7);
+    level=cur_level();light=cur_light();
     for(blen=MACRO_BUF;blen&&!macro_buf[blen-1];--blen){}
     saving=1;
     result=ds_save(&backend,want,n,level,light,macro_buf,blen,&st);
     saving=0;save_failed=result<1;
-    if(!save_failed){saved=1;dirty=0;save_stage=8;}
+    if(!save_failed){saved=1;dirty=0;base_level=level;base_light=light;save_stage=8;}
     else if(save_stage!=4 && save_stage!=7)save_stage=9;
     return !save_failed;
 }
@@ -332,17 +339,17 @@ static int profile_command(const u8 q[32],u8 r[32])
         return 1;
     }
     if(q[2]==10 || q[2]==11){
-        /* Side lighting, RAM only. Settings struct 0x4018a8:
-         * color index +0x32 (0..7, hardware-confirmed: red, green, yellow,
-         * turquoise, cyan, blue, purple, white), mode +0x12. Native modes 0/1
-         * look identical, 2 = off, so VIA exposes On(0)/Off(1). */
+        /* Side lighting, RAM only. Settings struct 0x4018a8: color index +0x32 (0..7:
+         * red, green, yellow, turquoise, cyan, blue, purple, white), mode +0x12 (0 steady,
+         * 1 breathing, 2 off). */
         unsigned c=q[2]==10;
         if(q[0]==7){
-            if(q[3]>(c?7u:1u)){r[0]=0xff;return 1;}
-            if(c)set_color(q[3]);else set_mode(q[3]?2:0);
-        }else r[3]=c?LIGHT_ST[0x32]:(LIGHT_ST[0x12]==2);
+            if(q[3]>(c?7u:2u)){r[0]=0xff;return 1;}
+            if(c)set_color(q[3]);else set_mode(q[3]);
+        }else r[3]=c?LIGHT_ST[0x32]:(LIGHT_ST[0x12]>2?2:LIGHT_ST[0x12]);
         return 1;
     }
+    if(q[2]==15){if(q[0]==8)r[3]=FLOW_VERSION_MINOR;return 1;}   /* firmware version (read-only) */
     if(q[2]==14){
         /* Tap-hold timeout preset 0..3 (applies to the active and future plans). */
         if(q[0]==7){
@@ -357,7 +364,7 @@ static int profile_command(const u8 q[32],u8 r[32])
         if(q[3]>=DS_SLOTS || !ds_rd(0,(u16)(q[3]*DS_REC),DS_REC,r+3)){r[0]=0xff;}
         return 1;
     }
-    if(q[2]==13){if(q[0]==8)r[3]=dirty;return 1;}   /* VIA toggle: unsaved changes; a click is acknowledged, no effect */
+    if(q[2]==13){if(q[0]==8)r[3]=unsaved();return 1;}   /* VIA toggle: unsaved changes; a click is acknowledged, no effect */
     if(q[0]==7){
         if(q[2]!=1 || q[3]!=1 || !save_profile())r[0]=0xff;
         return 1;
@@ -374,7 +381,7 @@ static int profile_command(const u8 q[32],u8 r[32])
         return 1;
     }
     if(q[2]!=2){r[0]=0xff;return 1;}
-    status=save_failed?"Save failed":dirty?"Unsaved changes":saved?"Saved":"No saved profile";
+    status=save_failed?"Save failed":unsaved()?"Unsaved changes":saved?"Saved":"No saved profile";
     for(i=0;i<28 && status[i];++i)r[3+i]=status[i];
     r[3+i]=0;return 1;
 }
@@ -401,6 +408,7 @@ static int initialize(void)
             macro_dirty=1;macro_apply();
         }else copy_active();
     }
+    base_level=cur_level();base_light=cur_light();
     initialized=1;
     return 1;
 }
@@ -463,7 +471,7 @@ void via_poll(void)
     ++via_responses;
 }
 
-/* Called for an OS bank reload after init. In the boot/bypass paths a tiny
+/* Called for an OS bank reload after init. Before the gate is active a tiny
  * original-padding gate calls STOCK_LOADER directly, avoiding this code. */
 int via_load_current(void)
 {

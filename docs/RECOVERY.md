@@ -25,11 +25,12 @@ Both write the byte-identical vendor image `stock/CompxUpgradeBinFile.bin`
 final success state (136). The EEPROM-less settings area keeps whatever the stock
 firmware last wrote.
 
-## Bypass mode
+## No bypass mode
 
-Disconnect USB, hold any key, plug USB in and keep holding for ~2 s. The new logic
-(tap-hold, VIA keymap, macros) stays out of the way and the stock keymap and vendor
-update path work. It is an application-level safety net, not a ROM recovery.
+Earlier builds had a "hold a key while plugging in" bypass to the stock behavior. It was removed: it
+added little (a broken build is fixed by reflashing anyway), and holding a key by accident silently
+disabled VIA. The stock update path is independent of the new code and keeps working, and the
+bootloader is untouched: that, not an application feature, is what protects against a brick.
 
 ## Rehearsed on hardware
 

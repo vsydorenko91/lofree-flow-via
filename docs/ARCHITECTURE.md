@@ -10,7 +10,7 @@ before/after bytes in the build manifest.
 
 | Part | Source | Role |
 |---|---|---|
-| Gate | `firmware/gate.S` | Tiny assembly shims placed in zero padding of the stock image. Every hook goes through a gate so that holding any key while plugging in USB makes the keyboard behave like stock (bypass mode). |
+| Gate | `firmware/gate.S` | Tiny assembly shims placed in zero padding of the stock image. Every hook goes through a gate. After each USB (re)connect the stock handlers run for a short startup window (32 passes); until the gate is active every hook falls through to the stock routine, so the stock update path always works. |
 | Tap-hold engine | `firmware/th.c` | Mod-tap and layer-tap. Wraps the stock matrix scan; see [TAP_HOLD.md](TAP_HOLD.md). |
 | VIA protocol | `firmware/protocol.[ch]` | Platform independent VIA command handler (keymap, macros, custom values). Mirrored by `tools/via_proto.py` as a reference model. |
 | Adapter | `firmware/adapter.c` | Glue: RAM keymap banks, USB Raw HID transport, save/load, lighting, macro table. |

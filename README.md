@@ -13,7 +13,7 @@ A VIA-compatible firmware patch for the **Lofree Flow84** keyboard (stock firmwa
 > * Flashing always carries a risk of bricking the keyboard. Read [docs/RECOVERY.md](docs/RECOVERY.md)
 >   before you start. You do this at your own risk.
 > * **Your changes are NOT saved automatically.** After you change anything in VIA (keys, macros,
->   lighting, tap-hold timeout), open the **Settings** tab and press **Profile → Save to keyboard**.
+>   lighting, tap-hold timeout), open the **Flow84** tab and press **Save to keyboard**.
 >   Without it, everything resets to the last saved state when the keyboard loses power.
 > * It is **not QMK** and not a full VIA implementation (see [What this is, and what it is not](#what-this-is-and-what-it-is-not)).
 
@@ -44,9 +44,8 @@ the keyboard did before still works; the patch only adds on top.
 | Key remapping on all four layers | Windows / Mac × base / Fn, live in VIA |
 | Mod-tap `MT(mods, kc)` and layer-tap `LT(1\|3, kc)` | up to 2 positions per Windows/Mac pair; timeout setting in VIA |
 | Macros `M0..M7` | text, key taps/down/up, delays; run on the stock macro player |
-| White key backlight 0..4, side RGB color (8) and On/Off | controls in the VIA menu |
+| White key backlight 0..4, side RGB color (8) and effect (steady / breathing / off) | controls in the VIA menu |
 | **Save to keyboard** | stores everything on the keyboard; survives power cycles |
-| Bypass mode | hold any key while plugging in USB to run as stock |
 
 ## What this is, and what it is not
 
@@ -78,7 +77,7 @@ the keyboard did before still works; the patch only adds on top.
   selectable in VIA ([details](docs/TAP_HOLD.md)).
 * **Macros** use the stock player: ASCII text (US layout), key taps/holds and delays. No media
   keys, no non-US characters; the delay unit is an interrupt tick (about 1 ms, not measured).
-* **Lighting.** White key backlight (0..4) and the side RGB panels (8 colors, on/off). The
+* **Lighting.** White key backlight (0..4) and the side RGB panels (8 colors; steady, breathing or off). The
   stock lighting effects are not exposed.
 * Anything the stock firmware does that has no VIA equivalent stays as it was.
 * Flashing works over USB only.
@@ -94,11 +93,10 @@ the keyboard did before still works; the patch only adds on top.
    load `definitions/flow84.json` (also offered on the flasher page) → authorize the Flow84.
 
 **Important:** changes in VIA apply immediately, but they are kept across power cycles only after
-you press **Settings → Profile → Save to keyboard** (the *Unsaved changes* indicator there shows
+you press **Flow84 → Save to keyboard** (the *Unsaved changes* indicator there shows
 whether anything is pending). Otherwise the keyboard returns to its last saved state when it is
 disconnected or powers off. To go back to the original firmware, use
 **Restore stock firmware** on the same page (see [docs/RECOVERY.md](docs/RECOVERY.md)).
-Bypass mode: hold any key while plugging in USB and the keyboard runs as stock.
 
 ## Documentation
 

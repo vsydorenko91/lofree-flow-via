@@ -47,7 +47,7 @@ def build(out,term=200,*,lto=True):
     for name,a,n,raw in sections:
         if raw is None:continue
         if a+n>CODE_LIMIT:raise ValueError('allocated flash section exceeds image safety limit')
-        if name=='.th_gate':patch(a,bytes(n),raw,'independent bypass gates in original zero padding')
+        if name=='.th_gate':patch(a,bytes(n),raw,'hook gates in original zero padding')
         else:
             if a<len(stock):raise ValueError(f'unexpected section {name}')
             if len(data)<a:data.extend(bytes(a-len(data)))

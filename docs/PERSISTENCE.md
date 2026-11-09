@@ -1,10 +1,11 @@
 # Persistence ("Save to keyboard")
 
-VIA edits take effect in RAM immediately. **Settings → Profile → Save to keyboard**
+VIA edits take effect in RAM immediately. **Flow84 tab → Save → Save to keyboard**
 writes only the differences from the factory profile, the lighting settings, the
 tap-hold timeout and the macro buffer to flash. The automatic VIA command `0x09` never
-writes flash. A saved profile is loaded at boot; bypass mode (hold a key while
-plugging in) ignores it.
+writes flash. A saved profile is loaded at boot, at the first moment no key is held.
+The *Unsaved changes* indicator is on when keys or macros were edited, or when the backlight, side
+RGB or tap-hold setting differs from the saved state.
 
 ## Where it is stored
 

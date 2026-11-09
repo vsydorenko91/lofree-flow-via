@@ -52,5 +52,5 @@ controls therefore set RAM state only and persist through our own save.
 ## Lighting hardware
 
 Two separate modules: white key backlight (levels 0..4) and side RGB panels. Side RGB
-color index 0..7: red, green, yellow, turquoise, cyan, blue, purple, white; modes 0 and
-1 look identical, mode 2 is off. VIA exposes them as On/Off.
+color index 0..7: red, green, yellow, turquoise, cyan, blue, purple, white; mode 0 steady, 1 breathing, 2 off
+(the effect byte comes from the stock table at `0x2296c`: `0x30`, `0x31`, `0xf0`).

@@ -28,7 +28,8 @@ never writes flash.
 | 3 | Telemetry (get): save counters, stage, matrix pass counter | diagnostics |
 | 6 | White key backlight | 0..4 |
 | 10 | Side RGB color | 0..7 (red, green, yellow, turquoise, cyan, blue, purple, white) |
-| 11 | Side lighting | 0 = on, 1 = off |
+| 11 | Side RGB effect | 0 steady, 1 breathing, 2 off |
 | 12 | Raw journal record (get) | slot 0..16, 28 bytes |
 | 13 | "Unsaved changes" indicator | read-only toggle (clicks are acknowledged and ignored) |
 | 14 | Tap-hold timeout preset | 0 normal, 1 short, 2 long, 3 very long |
+| 15 | Firmware version (get) | minor version number; the full version is the VIA firmware-version keyboard value (`major<<16 \| minor<<8 \| patch`) |

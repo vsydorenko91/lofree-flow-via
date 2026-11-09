@@ -67,7 +67,9 @@ def main():
                     print(f'slot {slot:2}: keys flags={flags:#x} level={rec[4]:#x} light={rec[5]:#x} entries={[(p_,hex(v)) for p_,v in ents]}')
                 elif tag==0xc9:print(f'slot {slot:2}: macro flags={flags:#x} off={rec[4]|rec[5]<<8} data={bytes(rec[8:8+n])!r}')
                 else:print(f'slot {slot:2}: unknown {rec.hex()}')
-        else:print(json.dumps({'status':status(c),'map_sha256':hashlib.sha256(read_map(c)).hexdigest()}))
+        else:
+            v=struct.unpack('>I',c.exchange(packet(2,4))[2:6])[0]
+            print(json.dumps({'status':status(c),'firmware':f'{v>>16}.{v>>8&255}.{v&255}','map_sha256':hashlib.sha256(read_map(c)).hexdigest()}))
     finally:c.close()
 
 if __name__=='__main__':main()

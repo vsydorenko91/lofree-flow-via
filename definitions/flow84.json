@@ -193,95 +193,20 @@
   ],
   "menus": [
     {
-      "label": "Lighting",
+      "label": "Flow84",
       "content": [
         {
-          "label": "Backlight",
-          "content": [
-            {
-              "label": "Key backlight level (0 = off)",
-              "type": "range",
-              "options": [
-                0,
-                4
-              ],
-              "content": [
-                "id_flow_backlight",
-                0,
-                6
-              ]
-            },
-            {
-              "label": "Side RGB color",
-              "type": "dropdown",
-              "options": [
-                "Red",
-                "Green",
-                "Yellow",
-                "Turquoise",
-                "Cyan",
-                "Blue",
-                "Purple",
-                "White"
-              ],
-              "content": [
-                "id_flow_rgb_color",
-                0,
-                10
-              ]
-            },
-            {
-              "label": "Side lighting",
-              "type": "dropdown",
-              "options": [
-                "On",
-                "Off"
-              ],
-              "content": [
-                "id_flow_light_mode",
-                0,
-                11
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "label": "Settings",
-      "content": [
-        {
-          "label": "Typing",
-          "content": [
-            {
-              "label": "Tap-hold timeout (mod-tap / layer-tap)",
-              "type": "dropdown",
-              "options": [
-                "Normal (200 ms)",
-                "Short (120 ms)",
-                "Long (320 ms)",
-                "Very long (500 ms)"
-              ],
-              "content": [
-                "id_flow_tap_term",
-                0,
-                14
-              ]
-            }
-          ]
-        },
-        {
-          "label": "Profile",
+          "label": "Save",
           "content": [
             {
               "label": "Save to keyboard",
               "type": "button",
-              "options": [
-                1
-              ],
               "content": [
                 "id_flow_save_now",
                 0,
+                1
+              ],
+              "options": [
                 1
               ]
             },
@@ -298,7 +223,97 @@
               "label": "Note",
               "type": "label",
               "content": [
-                "Firmware updates clear the saved profile. Export before updating."
+                "Changes are NOT saved automatically: press Save to keep them after power-off. Flashing firmware clears the saved profile."
+              ]
+            }
+          ]
+        },
+        {
+          "label": "Lighting",
+          "content": [
+            {
+              "label": "Key backlight level (0 = off)",
+              "type": "range",
+              "content": [
+                "id_flow_backlight",
+                0,
+                6
+              ],
+              "options": [
+                0,
+                4
+              ]
+            },
+            {
+              "label": "Side RGB color",
+              "type": "dropdown",
+              "content": [
+                "id_flow_rgb_color",
+                0,
+                10
+              ],
+              "options": [
+                "Red",
+                "Green",
+                "Yellow",
+                "Turquoise",
+                "Cyan",
+                "Blue",
+                "Purple",
+                "White"
+              ]
+            },
+            {
+              "label": "Side RGB effect",
+              "type": "dropdown",
+              "content": [
+                "id_flow_light_mode",
+                0,
+                11
+              ],
+              "options": [
+                "Steady",
+                "Breathing",
+                "Off"
+              ]
+            }
+          ]
+        },
+        {
+          "label": "Typing",
+          "content": [
+            {
+              "label": "Tap-hold timeout (mod-tap / layer-tap)",
+              "type": "dropdown",
+              "content": [
+                "id_flow_tap_term",
+                0,
+                14
+              ],
+              "options": [
+                "Normal (200 ms)",
+                "Short (120 ms)",
+                "Long (320 ms)",
+                "Very long (500 ms)"
+              ]
+            }
+          ]
+        },
+        {
+          "label": "About",
+          "content": [
+            {
+              "label": "Firmware version (read-only)",
+              "type": "dropdown",
+              "content": [
+                "id_flow_version",
+                0,
+                15
+              ],
+              "options": [
+                "0.0",
+                "0.1",
+                "0.2"
               ]
             }
           ]

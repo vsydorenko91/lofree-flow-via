@@ -222,20 +222,15 @@ class DeviceTransport(unittest.TestCase):
         b.matrix(PHYS);self.assertIn(0x39,b.held_keys());b.matrix()
         self.assertEqual(b.held_keys(),set())
 
-    def test_runtime_mt_real_reconnect_bypass_restores_rom_with_broken_new_code(self):
-        b=self.board();self.set_mt(b)
-        b.write(0x4003c4,b'\0')
-        b.w32(0x806504,0xffff);b.w32(0x806514,0xffff)
-        b.call('th_gate_scan',1)
-        b.write(0x4003c4,b'\x01');b.poison()
-        b.matrix(PHYS)
-        self.assertEqual(b.read(b.sym['th_gate_state'],1),b'\x02')
-        self.assertEqual(b.read(0x401c34+66*4,3),bytes([2,0x39,0]))
-        self.assertIn(0x39,b.held_keys());self.assertEqual(b.mods(),0)
-        b.matrix();b.matrix(PHYS);self.assertIn(0x39,b.held_keys());b.matrix()
-        raw=bytes([8,0x0d])+bytes(14)+bytes([0x40])
-        b.output(raw,interface=1,report_id=8)
-        self.assertEqual(b.read(0x40122c,17),raw)
+    def test_usb_reconnect_rearms_startup_window_and_a_held_key_does_not_disable_the_firmware(self):
+        b=self.board();state=b.sym['th_gate_state']
+        epoch=struct.unpack('<H',b.read(state+2,2))[0]
+        b.write(0x4003c4,b'\0');b.call('th_gate_scan',1);b.write(0x4003c4,b'\x01')
+        self.assertEqual(b.read(state,1),b'\x00')
+        self.assertEqual(struct.unpack('<H',b.read(state+2,2))[0],epoch+1)
+        for _ in range(40):b.matrix(PHYS)        # a key held through the whole window
+        self.assertEqual(b.read(state,1),b'\x01')
+        b.matrix()
 
     def test_runtime_mt_capacity_and_cross_layer_conflict_reject_atomically(self):
         b=self.board();self.set_mt(b,slot=66);self.set_mt(b,slot=67,code=0x224a)
@@ -383,8 +378,8 @@ class DeviceTransport(unittest.TestCase):
         for expected in [packet(1,0,13),packet(0x11,4),packet(0x0d,0,0xc0)]:
             b.poll();self.assertEqual(b.receive(),expected)
 
-    def test_bypass_with_broken_new_code_preserves_stock_restore_path(self):
-        b=self.board();b.write(b.sym['th_gate_state'],b'\x02');b.poison()
+    def test_startup_window_with_broken_new_code_preserves_stock_restore_path(self):
+        b=self.board();b.write(b.sym['th_gate_state'],b'\x00\x00');b.poison()
         b.call('via_gate_loader')
         b.call('via_gate_poll')
         raw=bytes([8,0x0d])+bytes(14)+bytes([0x40])

@@ -1,3 +1,4 @@
+#include "version.h"
 #include "protocol.h"
 
 static const uint8_t consumer_code[10] = {0xa8,0xa9,0xaa,0xab,0xac,0xae,0xb2,0xb4,0xbd,0xbe};
@@ -156,7 +157,7 @@ int flow_via_handle(flow_via *s,const uint8_t *q,size_t len,uint8_t r[32],uint32
         }
         if(q[1]==1) v=now-s->started;
         else if(q[1]==2) v=0;
-        else if(q[1]==4) v=1;
+        else if(q[1]==4) v=FLOW_FW_VERSION;
         else if(q[1]==6) v=9;
         else {ok=0;break;}
         r[2]=(uint8_t)(v>>24); r[3]=(uint8_t)(v>>16); r[4]=(uint8_t)(v>>8); r[5]=(uint8_t)v; break;

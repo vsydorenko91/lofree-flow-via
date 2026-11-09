@@ -19,7 +19,7 @@ with an empty key, other layers) is rejected before RAM changes.
 * The tap is emitted when the key is released. This is inherent to tap-hold and gives
   a small typing delay; put these on rarely typed keys (Caps Lock, a modifier cluster)
   rather than on letters or Space if the delay bothers you.
-* Timeout is a VIA setting (Settings → Typing): Normal 200 ms, Short 120 ms, Long 320 ms, Very
+* Timeout is a VIA setting (Flow84 tab → Typing): Normal 200 ms, Short 120 ms, Long 320 ms, Very
   long 500 ms. The engine counts matrix passes; they run at about 1000 per second (measured
   with `tools/device_check.py rate`), so one pass is about 1 ms.
 * The pending key is never lost: taps queue until both USB reports (down and up)

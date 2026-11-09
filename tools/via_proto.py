@@ -12,6 +12,7 @@ import sys
 import time
 
 HERE = Path(__file__).resolve().parents[1]
+FIRMWARE_VERSION = 0x000200   # major<<16 | minor<<8 | patch; keep in sync with firmware/version.h
 LAYERS = ('win', 'winfn', 'mac', 'macfn')
 ROWS, COLS, SLOTS = 6, 22, 132
 SUPPORTED_KEYBOARD_USAGES = set(range(4, 0xA5))   # all QMK basic keycodes; OEM boot-report path carries them (emulator-verified)
@@ -264,7 +265,7 @@ class Endpoint:
                     reply[3:3 + (ROWS - request[2]) * 3] = b'\0' * ((ROWS - request[2]) * 3)
                     return bytes(reply)
                 elif value_id == 4:
-                    value = 1  # prototype implementation version, not vendor 2.52
+                    value = FIRMWARE_VERSION
                 elif value_id == 6:
                     value = KEYCODES_VERSION
                 else:
