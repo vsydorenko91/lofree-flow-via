@@ -257,10 +257,10 @@
               "label": "Tap-hold timeout (mod-tap / layer-tap)",
               "type": "dropdown",
               "options": [
-                "Normal",
-                "Short",
-                "Long",
-                "Very long"
+                "Normal (200 ms)",
+                "Short (120 ms)",
+                "Long (320 ms)",
+                "Very long (500 ms)"
               ],
               "content": [
                 "id_flow_tap_term",

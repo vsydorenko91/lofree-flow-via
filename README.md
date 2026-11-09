@@ -69,8 +69,8 @@ the keyboard did before still works; the patch only adds on top.
 * **Layers.** VIA shows four layers (Windows/Mac × base/Fn). The Windows/Mac switch stays
   hardware; arbitrary layer keys are rejected.
 * **Mod-tap and layer-tap** work on at most two keys per Windows/Mac pair, send the tap on
-  key *release* (a small delay), and are best kept off Space and letters. The timeout is in
-  internal processing passes, not exact milliseconds ([details](docs/TAP_HOLD.md)).
+  key *release* (a small delay), and are best kept off Space and letters. The timeout (120–500 ms) is
+  selectable in VIA ([details](docs/TAP_HOLD.md)).
 * **Macros** use the stock player: ASCII text (US layout), key taps/holds and delays. No media
   keys, no non-US characters; the delay unit is an interrupt tick (about 1 ms, not measured).
 * **Lighting.** White key backlight (0..4) and the side RGB panels (8 colors, on/off). The
