@@ -17,6 +17,8 @@ A VIA-compatible firmware patch for the **Lofree Flow84** keyboard (stock firmwa
 >   Without it, everything resets to the last saved state when the keyboard loses power.
 > * It is **not QMK** and not a full VIA implementation (see [What this is, and what it is not](#what-this-is-and-what-it-is-not)).
 
+**Web flasher: <https://vsydorenko91.github.io/lofree-flow-via/>**
+
 ## Why this exists
 
 The Flow84 is a lovely low-profile keyboard, but Lofree ships it with no software at all:
@@ -83,7 +85,8 @@ the keyboard did before still works; the patch only adds on top.
 
 ## Install (web flasher)
 
-1. Open the flasher page (this repository's GitHub Pages site) in Chrome, Edge, Brave or Opera.
+1. Open the flasher: **<https://vsydorenko91.github.io/lofree-flow-via/>** in Chrome, Edge, Brave or Opera
+   (Firefox and Safari do not support WebHID).
 2. Connect the keyboard with a **USB cable**, switch set to USB.
 3. Pick **VIA firmware**, tick the acknowledgement and click **Connect keyboard and flash**.
    Select the keyboard and, if asked, the bootloader device. The upload takes about a minute.
