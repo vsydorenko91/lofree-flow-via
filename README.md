@@ -1,4 +1,8 @@
-# Flow84 VIA
+<h1 align="center">Flow84 VIA</h1>
+
+<p align="center"><img src="docs/images/via-layout.png" alt="The Lofree Flow84 layout in the VIA web app" width="860"></p>
+
+<p align="center"><i>The Flow84 in the VIA web app: remap keys, record macros, set lighting, save it all on the keyboard.</i></p>
 
 A VIA-compatible firmware patch for the **Lofree Flow84** keyboard (stock firmware OE915 v2.52).
 
@@ -24,7 +28,9 @@ scanning, USB code, macro player and settings storage behave, and then wrote sma
 of new code that live in unused space of the original image and hook into it. Everything
 the keyboard did before still works; the patch only adds on top.
 
-![Web flasher](docs/images/flasher.png)
+<p align="center"><img src="docs/images/flasher.png" alt="The web flasher" width="560"></p>
+
+<p align="center"><i>The browser flasher: install the VIA firmware or go back to stock, no tools to install.</i></p>
 
 ## What you get
 
