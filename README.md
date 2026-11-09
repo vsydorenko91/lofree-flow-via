@@ -12,6 +12,9 @@ A VIA-compatible firmware patch for the **Lofree Flow84** keyboard (stock firmwa
 >   hardware revisions or firmware versions may behave differently.
 > * Flashing always carries a risk of bricking the keyboard. Read [docs/RECOVERY.md](docs/RECOVERY.md)
 >   before you start. You do this at your own risk.
+> * **Your changes are NOT saved automatically.** After you change anything in VIA (keys, macros,
+>   lighting, tap-hold timeout), open the **Settings** tab and press **Profile → Save to keyboard**.
+>   Without it, everything resets to the last saved state when the keyboard loses power.
 > * It is **not QMK** and not a full VIA implementation (see [What this is, and what it is not](#what-this-is-and-what-it-is-not)).
 
 ## Why this exists
@@ -87,8 +90,10 @@ the keyboard did before still works; the patch only adds on top.
 4. Open [usevia.app](https://usevia.app) → Settings → enable *Show Design tab* → Design →
    load `definitions/flow84.json` (also offered on the flasher page) → authorize the Flow84.
 
-Changes in VIA apply immediately but survive a power cycle only after
-**Settings → Profile → Save to keyboard**. To go back to the original firmware, use
+**Important:** changes in VIA apply immediately, but they are kept across power cycles only after
+you press **Settings → Profile → Save to keyboard** (the *Unsaved changes* indicator there shows
+whether anything is pending). Otherwise the keyboard returns to its last saved state when it is
+disconnected or powers off. To go back to the original firmware, use
 **Restore stock firmware** on the same page (see [docs/RECOVERY.md](docs/RECOVERY.md)).
 Bypass mode: hold any key while plugging in USB and the keyboard runs as stock.
 
