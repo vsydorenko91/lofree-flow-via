@@ -1,4 +1,4 @@
-<h1 align="center">Lofree Flow VIA</h1>
+<h1 align="center">Lofree Flow84 VIA</h1>
 
 <p align="center"><img src="docs/images/via-layout.png" alt="The Lofree Flow84 layout in the VIA web app" width="860"></p>
 
@@ -24,9 +24,7 @@ A VIA-compatible firmware patch for the **Lofree Flow84** keyboard (stock firmwa
 
 The Flow84 is a lovely low-profile keyboard, but Lofree ships it with no software at all:
 no remapping tool, no macros, no way to change what a key does. I wanted to keep using
-mine for a long time, and I wanted it to do more than the factory layout allows, so I
-decided to give it a second life instead of waiting for a vendor that is not going to
-come.
+mine for a long time, and I wanted it to do more than the factory layout allows.
 
 There are no firmware sources, and no QMK or ZMK port exists for this chip. So the only
 way in was the hard way: I disassembled the original firmware, worked out how its key
@@ -78,8 +76,7 @@ the keyboard did before still works; the patch only adds on top.
   selectable in VIA ([details](docs/TAP_HOLD.md)).
 * **Macros** use the stock player: ASCII text (US layout), key taps/holds and delays. No media
   keys, no non-US characters; the delay unit is an interrupt tick (about 1 ms, not measured).
-* **Lighting.** White key backlight (0..4) and the side RGB panels (8 colors; steady, breathing or off). The
-  stock lighting effects are not exposed.
+* **Lighting.** White key backlight (0..4) and the side RGB panels (8 colors; steady, breathing or off).
 * Anything the stock firmware does that has no VIA equivalent stays as it was.
 * Flashing works over USB only.
 
@@ -118,27 +115,12 @@ stock/        the unmodified vendor firmware (used to build and to restore)
 docs/
 ```
 
-## Made with AI
-
-This project was developed with substantial help from an AI assistant (Anthropic's Claude),
-working under the direction of the maintainer: the reverse-engineering analysis, the firmware
-patch, the tools, the tests, the web flasher and this documentation were largely written by
-the AI and reviewed and run on real hardware by the maintainer. Treat it like any
-community firmware: read the code, check the tests, and flash at your own risk.
-
 ## Stock firmware notice
 
 `stock/CompxUpgradeBinFile.bin` is the unmodified, vendor-supplied OE915 v2.52 update
 file, included so the patch can be built reproducibly and the keyboard can be restored.
 It is Lofree's property and is not covered by this project's license (see `stock/NOTICE`). If the rights
 holder objects it will be removed.
-
-## Acknowledgements
-
-The container format, the update-mode handshake and the first Flow84 key matrix map were
-worked out by the community project
-[ennis-ma/lofree-flow-key-remapper](https://github.com/ennis-ma/lofree-flow-key-remapper);
-this repository re-implements what it needs independently from its own reverse engineering.
 
 ## License
 

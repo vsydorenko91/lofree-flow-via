@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Lofree Flow VIA firmware image from stock + firmware/*.c. Never touches hardware."""
+"""Build the Lofree Flow84 VIA firmware image from stock + firmware/*.c. Never touches hardware."""
 from pathlib import Path
 import argparse,hashlib,json,struct,subprocess,sys
 from elftools.elf.elffile import ELFFile
