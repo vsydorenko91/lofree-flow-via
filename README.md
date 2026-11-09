@@ -131,7 +131,7 @@ community firmware: read the code, check the tests, and flash at your own risk.
 
 `stock/CompxUpgradeBinFile.bin` is the unmodified, vendor-supplied OE915 v2.52 update
 file, included so the patch can be built reproducibly and the keyboard can be restored.
-It is Lofree's property and is not covered by this project's license. If the rights
+It is Lofree's property and is not covered by this project's license (see `stock/NOTICE`). If the rights
 holder objects it will be removed.
 
 ## Acknowledgements

@@ -1,0 +1,4 @@
+stock/CompxUpgradeBinFile.bin is the unmodified OE915 v2.52 update file published by Lofree.
+It is included only so the patch can be built reproducibly and the keyboard can be restored.
+It is Lofree's property and is NOT covered by this project's MIT license.
+It will be removed on request of the rights holder.
