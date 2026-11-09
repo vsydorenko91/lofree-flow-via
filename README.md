@@ -1,4 +1,4 @@
-<h1 align="center">Flow84 VIA</h1>
+<h1 align="center">Lofree Flow VIA</h1>
 
 <p align="center"><img src="docs/images/via-layout.png" alt="The Lofree Flow84 layout in the VIA web app" width="860"></p>
 
