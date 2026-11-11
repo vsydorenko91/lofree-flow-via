@@ -17,6 +17,14 @@
   writer rejects writes below word `0x800`; writes from the application do not work
   here), 1 = settings area with sectors A and B (see [PERSISTENCE.md](PERSISTENCE.md)).
 
+* Flash-controller register `0x803024` is written by the stock `main()` (`0x1938c(5)` → `0xE0`)
+  and never by the bootloader; it is the suspected write protection of the application area
+  (see [PERSISTENCE.md](PERSISTENCE.md)).
+* Update-mode marker: 8 bytes at selector 1 word `0x807C`, written by the stock function
+  `0x1B7D4`, the only thing the bootloader tests at reset (see [RECOVERY.md](RECOVERY.md)).
+* Reused stock code: `0x19710..0x19818` (Win/Mac keymap loader) and `0x1f99c..0x1fab0` (mouse
+  report sender) have no callers left in the patched image and hold our code.
+
 ## RAM
 
 * Stock RAM starts at `0x400000`; our BSS begins near `0x404dc4` and the build keeps
@@ -27,7 +35,8 @@
 
 ## Key stock functions
 
-Matrix scan `0x1beb4`, key event `0x19898`, keymap tables `0x22cc0/0x22ed0/0x230e0/0x232f0`
+Matrix scan `0x1beb4`, key event `0x19898`, flash driver `0x1881c..0x18ac4` (erase wrapper
+`0x19660`, program `0x1b9a4`, read `0x1a76c`), enter update mode `0x1b7d4`, `main` `0x1d854`, keymap tables `0x22cc0/0x22ed0/0x230e0/0x232f0`
 (Win, Win+Fn, Mac, Mac+Fn), settings journal `0x22038`, brightness `0x1a904`, color
 `0x1ad38`, lighting mode `0x1ada8`, OS switch loader `0x1af9c`.
 

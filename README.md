@@ -65,6 +65,9 @@ the keyboard did before still works; the patch only adds on top.
 
 * **Flow84 only, one tested unit.** Everything here was verified on one Flow84 over USB. The Flow100 is not supported yet.
   Sleep/wake and Bluetooth were not specifically tested with this firmware.
+  Of the 0.3.0 additions, flashing, the firmware start and saving a restored profile were
+  checked on the keyboard; the tap-hold decision modes, the third and fourth tap-hold key, the
+  reset button and the flasher's automatic profile restore are so far verified in the emulator.
 * **Flashing erases your saved profile.** It is a property of the vendor update procedure. When
   the keyboard already runs this firmware, the web flasher backs the profile up (keys, macros,
   lighting, tap-hold timeout) before flashing, restores and saves it afterwards, and offers the
@@ -75,9 +78,10 @@ the keyboard did before still works; the patch only adds on top.
   ([how it is stored](docs/PERSISTENCE.md)).
 * **Layers.** VIA shows four layers (Windows/Mac × base/Fn). The Windows/Mac switch stays
   hardware; arbitrary layer keys are rejected.
-* **Mod-tap and layer-tap** work on at most four keys per Windows/Mac pair, send the tap on
-  key *release* (a small delay), and are best kept off Space and letters. The timeout (120–500 ms) is
-  selectable in VIA ([details](docs/TAP_HOLD.md)).
+* **Mod-tap and layer-tap** work on at most four keys per Windows/Mac pair and send the tap on
+  key *release* (a small delay). The timeout (120–500 ms) and the rule that turns a tap into a
+  hold are selectable in VIA; for keys you type through, such as Space, pick *When another key
+  is pressed and released* ([details and an example](docs/TAP_HOLD.md)).
 * **Macros** use the stock player: ASCII text (US layout), key taps/holds and delays. No media
   keys, no non-US characters; the delay unit is an interrupt tick (about 1 ms, not measured).
 * **Lighting.** White key backlight (0..4) and the side RGB panels (8 colors; steady, breathing or off).

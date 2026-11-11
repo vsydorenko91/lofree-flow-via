@@ -36,6 +36,20 @@ with an empty key, other layers) is rejected before RAM changes.
   were really submitted; macros own the report while they play; leaving USB mode or
   switching OS discards queued taps.
 
+## Example: hold Space for arrows on W A S D
+
+1. Keymap tab, layer 1 (Windows + Fn): put `Up`, `Left`, `Down`, `Right` on `W`, `A`, `S`, `D`.
+   Do the same on layer 3 if you also use the Mac mode.
+2. Layer 0 (Windows): on Space enter the keycode `LT(1,KC_SPC)` (**Special → Any**, value
+   `0x412C`). On layer 2 (Mac) use `LT(3,KC_SPC)` = `0x432C`.
+3. Flow84 tab → Typing → *Tap-hold becomes hold* → **When another key is pressed and released**.
+4. Flow84 tab → Save → **Save to keyboard**.
+
+A short press of Space types a space; typing straight through it (`Space` down, letter down,
+`Space` up) is still a space followed by the letter; holding Space and tapping `W A S D` moves
+the cursor, and holding one of them past the timeout repeats it. The physical Fn key selects
+the same layer, so Fn + `W A S D` are arrows as well.
+
 ## Implementation notes
 
 The engine (`firmware/th.c`) wraps every stock matrix-scan call (13 call sites),
@@ -43,5 +57,8 @@ keeps a private shadow matrix and synthesizes presses on eight otherwise unused 
 positions (columns 19 and 20 of rows 0..3, empty in every ROM keymap) that appear in the
 keymap as the tap key and the hold action. Rows 0 and 1 were used on hardware since 0.1; rows 2
 and 3 (the third and fourth tap-hold key) are verified in the emulator only so far. These slots cannot be remapped from VIA. Edits are
-applied only when physical and synthetic input are idle. The current Fn state is
+applied only when physical and synthetic input are idle. In the two non-default modes a
+small queue (16 presses) holds back the keys pressed while a tap-hold key is undecided and
+replays them in order, each as a complete press, waiting for the keyboard report to be
+submitted before the next one; a tap also waits for the keys pressed before it. The current Fn state is
 evaluated before choosing a layer, including Fn+key in the same scan.

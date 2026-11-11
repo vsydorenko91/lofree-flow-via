@@ -44,12 +44,21 @@ python tools/flash.py restore-stock
 python tools/device_check.py backup --file local/layout.json   # keymap backup
 python tools/device_check.py restore --file local/layout.json
 python tools/device_check.py save | status | dump | telemetry | rate
+python tools/build.py --flash-probe      # experimental image, see PERSISTENCE.md
+python tools/device_check.py flashprobe
 ```
 
-`device_check.py` backs up only the keymap; macros and lighting are not included.
+On macOS the program that runs `flash.py` needs the *Input Monitoring* permission (the update
+interface shares a USB interface with a keyboard collection); the Raw HID tools
+(`device_check.py`, `via_device.py`) work without it.
+
+`device_check.py` backs up only the keymap; macros and lighting are not included. The web
+flasher backs up and restores the whole profile.
 
 ## Conventions
 
+* Code that is only reached after the gate is active may be placed in the reused stock
+  functions with `IN_HOLE_A` / `IN_HOLE_B` (`firmware/th_runtime.h`); the linker checks the size.
 * Keep flash and RAM budgets in mind: the build fails over the bootloader limit, and
   struct copies pull in `memcpy`, which does not exist in this freestanding build.
 * Every behavior change needs an emulator test; every flash-format change needs a

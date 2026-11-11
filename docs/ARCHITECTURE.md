@@ -11,10 +11,11 @@ before/after bytes in the build manifest.
 | Part | Source | Role |
 |---|---|---|
 | Gate | `firmware/gate.S` | Tiny assembly shims placed in zero padding of the stock image. Every hook goes through a gate. After each USB (re)connect the stock handlers run for a short startup window (32 passes); until the gate is active every hook falls through to the stock routine, so the stock update path always works. |
-| Tap-hold engine | `firmware/th.c` | Mod-tap and layer-tap. Wraps the stock matrix scan; see [TAP_HOLD.md](TAP_HOLD.md). |
+| Tap-hold engine | `firmware/th.c` | Mod-tap and layer-tap on up to four keys, three decision modes. Wraps the stock matrix scan; see [TAP_HOLD.md](TAP_HOLD.md). |
 | VIA protocol | `firmware/protocol.[ch]` | Platform independent VIA command handler (keymap, macros, custom values). Mirrored by `tools/via_proto.py` as a reference model. |
 | Adapter | `firmware/adapter.c` | Glue: RAM keymap banks, USB Raw HID transport, save/load, lighting, macro table. |
 | Delta store | `firmware/dstore.[ch]` | Power-loss-safe journal of changes; see [PERSISTENCE.md](PERSISTENCE.md). |
+| Web flasher | `web/` | WebHID flasher (`flasher-core.js`) with profile backup and restore around an update (`profile-core.js`). |
 | Macro compiler | `firmware/macro.[ch]` | Turns VIA macro bytecode into the stock macro player's records; see [MACROS.md](MACROS.md). |
 
 ## USB / VIA transport

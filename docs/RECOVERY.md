@@ -59,4 +59,5 @@ bootloader is untouched: that, not an application feature, is what protects agai
 
 Stock restored from a patched image (4380/4380 echoes, states 5 → 136) and the patched
 image flashed again from stock (4468/4468); keyboard enumeration and typing were
-checked each time.
+checked each time. Version 0.3.0 was flashed over 0.2.0 with the CLI (states 5 → 136), the
+profile restored over Raw HID and saved.
