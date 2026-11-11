@@ -7,7 +7,7 @@ from via_proto import packet
 ROOT=Path(__file__).resolve().parents[1]
 NODE=shutil.which('node')
 MT_A,MT_B=0x2204,0x2105      # mod-tap codes
-SETTINGS=((6,3),(10,5),(11,1),(14,2))
+SETTINGS=((6,3),(10,5),(11,1),(14,2),(18,1))
 
 
 @unittest.skipUnless(NODE,'node is not installed')
@@ -69,7 +69,7 @@ class WebProfile(unittest.TestCase):
         p=self.backup(b)
         self.assertEqual((p['format'],p['version'],p['firmware']),('flow84-via-profile',1,'0.3.0'))
         self.assertEqual((bytes.fromhex(p['keymap']),bytes.fromhex(p['macros'])),want[:2])
-        self.assertEqual(p['settings'],{'backlight':3,'sideColor':5,'sideEffect':1,'tapTerm':2})
+        self.assertEqual(p['settings'],{'backlight':3,'sideColor':5,'sideEffect':1,'tapTerm':2,'tapHoldMode':1})
         self.assertEqual(b.ops,[]);self.assertEqual(self.state(b),want)
 
     def test_restore_on_a_freshly_flashed_keyboard_survives_a_power_cycle(self):

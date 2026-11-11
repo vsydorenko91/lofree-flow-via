@@ -6,7 +6,8 @@ export const RAW = { usagePage: 0xff60, usage: 0x61 };
 export const FORMAT = 'flow84-via-profile';
 const KEYMAP_BYTES = 1056;              // 4 layers x 6 rows x 22 columns x 2 bytes
 const CHUNK = 28;
-const SETTINGS = { backlight: 6, sideColor: 10, sideEffect: 11, tapTerm: 14 };   // custom value ids, channel 0
+const SETTINGS = { backlight: 6, sideColor: 10, sideEffect: 11, tapTerm: 14, tapHoldMode: 18 };   // custom value ids, channel 0
+const OPTIONAL = new Set(['tapHoldMode']);   // not in firmware 0.2.0: skipped when the keyboard does not know it
 
 export class Rejected extends Error {}
 
@@ -63,7 +64,10 @@ export async function readProfile(transport) {
   await waitReady(transport);
   const v = await ask(transport, [2, 4]);
   const settings = {};
-  for (const [name, id] of Object.entries(SETTINGS)) settings[name] = (await ask(transport, [8, 0, id]))[3];
+  for (const [name, id] of Object.entries(SETTINGS)) {
+    try { settings[name] = (await ask(transport, [8, 0, id]))[3]; }
+    catch (e) { if (!(e instanceof Rejected && OPTIONAL.has(name))) throw e; }
+  }
   return {
     format: FORMAT, version: 1,
     firmware: `${v[3]}.${v[4]}.${v[5]}`,
@@ -129,7 +133,13 @@ export async function writeProfile(transport, profile, log = () => {}) {
     const n = Math.min(CHUNK, size - off);
     await ask(transport, [0x0f, off >> 8, off & 255, n, ...macros.subarray(off, off + n)]);
   }
-  for (const [name, value] of Object.entries(want.settings)) await ask(transport, [7, 0, SETTINGS[name], value]);
+  for (const [name, value] of Object.entries(want.settings)) {
+    try { await ask(transport, [7, 0, SETTINGS[name], value]); }
+    catch (e) {
+      if (!(e instanceof Rejected && OPTIONAL.has(name))) throw e;
+      delete want.settings[name]; log(`This firmware has no setting ${name}; skipped.`);
+    }
+  }
 
   const now = await readProfile(transport);
   const keys = [];

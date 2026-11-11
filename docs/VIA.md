@@ -33,4 +33,5 @@ never writes flash.
 | 13 | "Unsaved changes" indicator | read-only toggle (clicks are acknowledged and ignored) |
 | 14 | Tap-hold timeout preset | 0 normal, 1 short, 2 long, 3 very long |
 | 15 | Firmware version (get) | minor version number; the full version is the VIA firmware-version keyboard value (`major<<16 \| minor<<8 \| patch`) |
+| 18 | Tap-hold decision | 0 hold when another key is pressed, 1 when another key is pressed and released, 2 only after the timeout |
 | 16 | Reset to factory (set only, value 1): factory keymap and empty macros in RAM; lighting and timeout are kept; press Save to make it permanent | button |

@@ -286,7 +286,10 @@ static void set_level(unsigned v)
 static u8 base_level,base_light;
 static u8 cur_level(void){return *LEVEL_RAM>4?4:*LEVEL_RAM;}
 static u8 cur_light(void){return 0x80|term_index<<5|(LIGHT_ST[0x12]&3)<<3|(LIGHT_ST[0x32]&7);}
-static int unsaved(void){return dirty||cur_level()!=base_level||cur_light()!=base_light;}
+/* Stored "level" byte: backlight 0..4 in the low nibble, tap-hold flavor in bits 4..5
+ * (profiles saved by 0.2.0 have 0 there). 0xff still means "not stored". */
+static u8 cur_lv(void){return cur_level()|th_flavor<<4;}
+static int unsaved(void){return dirty||cur_lv()!=base_level||cur_light()!=base_light;}
 static void set_color(unsigned v){LIGHT_ST[0x32]=v;*(volatile u8 *)0x401219u=v;*(volatile u8 *)0x4018c3u=1;}
 static void set_mode(unsigned v)
 {
@@ -331,7 +334,7 @@ static int save_profile(void)
         if(n==DS_MAX_ENTRIES){save_failed=1;save_stage=9;return 0;}   /* too many changed keys */
         want[n].pos=i;want[n++].code=code;
     }
-    level=cur_level();light=cur_light();
+    level=cur_lv();light=cur_light();
     for(blen=MACRO_BUF;blen&&!macro_buf[blen-1];--blen){}
     saving=1;
     result=ds_save(&backend,want,n,level,light,macro_buf,blen,&st);
@@ -419,6 +422,14 @@ static int profile_command(const u8 q[32],u8 r[32])
         return 1;
     }
 #endif
+    if(q[2]==18){
+        /* Tap-hold decision 0..2 (th_runtime.h); only while no key is held or pending. */
+        if(q[0]==7){
+            if(q[3]>=TH_FLAVORS||th_busy()){r[0]=0xff;return 1;}
+            th_flavor=q[3];
+        }else r[3]=th_flavor;
+        return 1;
+    }
     if(q[2]==16){
         /* Button: factory keymap and empty macros, RAM only (Save makes it permanent). */
         if(q[0]==7 && (q[3]!=1 || !factory_reset(0) || !macro_rs(0)))r[0]=0xff;
@@ -458,13 +469,13 @@ static int initialize(void)
         if(ds_load(&backend,&st)>0 && profile_valid(st.entries,st.count)){
             if(st.light&0x80)term_index=st.light>>5&3;
             apply_list(st.entries,st.count);saved=1;
-            if(st.level<=4)set_level(st.level);
+            if(st.level!=DS_NO_LEVEL && (st.level&15)<=4 && st.level>>4<TH_FLAVORS){set_level(st.level&15);th_flavor=st.level>>4;}
             if(st.light&0x80){set_color(st.light&7);if((st.light>>3&3)<=2)set_mode(st.light>>3&3);}
             for(k=0;k<MACRO_BUF;++k)macro_buf[k]=k<st.blob_len?st.blob[k]:0;
             macro_dirty=1;macro_apply();
         }else copy_active();
     }
-    base_level=cur_level();base_light=cur_light();
+    base_level=cur_lv();base_light=cur_light();
     initialized=1;
     return 1;
 }

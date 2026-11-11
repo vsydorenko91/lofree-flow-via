@@ -268,6 +268,146 @@ class DeviceTransport(unittest.TestCase):
         self.assertEqual([r[2] for r in b.reports[before:] if r[2]],[k[2] for k in keys])
         self.assertEqual(b.held_keys(),set())
 
+    # ---- tap-hold flavors (custom value 18): 0 hold on press, 1 hold on nested tap, 2 timeout only ----
+    TH,A,S=66,67,68                      # Caps position (MT: tap Esc 0x29, hold LCtrl), 'a' 0x04, 's' 0x16
+    def flavored(self,flavor,term=30):
+        b=self.board();self.set_mt(b)
+        for k in range(4):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',term))
+        self.assertEqual(b.transact(packet(7,0,18,flavor))[0],7)
+        self.assertEqual(b.transact(packet(8,0,18))[3],flavor)
+        b.reports.clear()
+        return b
+    def typed(self,b):
+        """Distinct keyboard report states in order: (modifiers, sorted keys)."""
+        out=[]
+        for r in b.reports:
+            state=(r[0],tuple(sorted(k for k in r[2:8] if k)))
+            if not out or out[-1]!=state:out.append(state)
+        return out
+    def idle(self,b):
+        b.matrix();b.drain(40)
+        self.assertEqual((b.mods(),b.held_keys(),b.faults()&2),(0,set(),0))
+        self.assertEqual(b.transact(packet(8,0,18))[0],8)
+
+    def test_flavor_setting_is_validated_and_refused_while_a_key_is_held(self):
+        b=self.flavored(1)
+        self.assertEqual(b.transact(packet(7,0,18,3))[0],0xff)
+        b.matrix(self.A);self.assertEqual(b.transact(packet(7,0,18,2))[0],0xff);b.matrix();b.drain()
+        self.assertEqual(b.transact(packet(8,0,18))[3],1)
+        self.assertEqual(b.transact(packet(7,0,18,0))[0],7)
+
+    def test_flavor_0_holds_at_the_first_other_key_press(self):
+        b=self.flavored(0)
+        b.matrix(self.TH);b.matrix(self.TH,self.A);b.matrix(self.A);self.idle(b)
+        self.assertEqual(self.typed(b),[(1,(4,)),(0,(4,)),(0,())])
+
+    def test_flavors_1_and_2_roll_gives_tap_then_the_other_key_in_order(self):
+        for flavor in (1,2):
+            b=self.flavored(flavor)
+            b.matrix(self.TH);b.matrix(self.TH,self.A);b.matrix(self.A)     # TH released first
+            for _ in range(12):b.matrix(self.A)
+            self.idle(b)
+            self.assertEqual(self.typed(b),[(0,(0x29,)),(0,()),(0,(4,)),(0,())],flavor)
+
+    def test_flavor_1_nested_tap_of_another_key_makes_it_hold(self):
+        b=self.flavored(1)
+        b.matrix(self.TH);b.matrix(self.TH,self.A);b.matrix(self.TH,self.A)
+        self.assertEqual(self.typed(b),[])                                  # nothing is sent while undecided
+        b.matrix(self.TH)                                                  # 'a' released inside: hold
+        for _ in range(12):b.matrix(self.TH)
+        self.idle(b)
+        self.assertEqual(self.typed(b),[(1,(4,)),(1,()),(0,())])
+
+    def test_flavor_2_other_keys_do_not_decide_only_the_timeout_does(self):
+        b=self.flavored(2)
+        b.matrix(self.TH);b.matrix(self.TH,self.A);b.matrix(self.TH);b.matrix(self.TH,self.S)
+        for _ in range(8):b.matrix(self.TH,self.S)
+        self.assertEqual(self.typed(b),[])                                  # still inside the 30-pass timeout
+        for _ in range(40):b.matrix(self.TH,self.S)
+        self.idle(b)
+        self.assertEqual(self.typed(b),[(1,(4,)),(1,()),(1,(0x16,)),(0,())])
+        # A quick tap with a nested key tap is a tap, and the nested key still arrives, after it.
+        b=self.flavored(2)
+        b.matrix(self.TH);b.matrix(self.TH,self.A);b.matrix(self.TH);b.matrix();self.idle(b)
+        self.assertEqual(self.typed(b),[(0,(0x29,)),(0,()),(0,(4,)),(0,())])
+
+    def test_flavors_keep_the_order_of_several_held_back_keys(self):
+        for flavor in (1,2):
+            b=self.flavored(flavor)
+            b.matrix(self.TH);b.matrix(self.TH,self.S);b.matrix(self.TH,self.S,self.A)   # s before a, although a has the lower index
+            b.matrix(self.S,self.A)
+            for _ in range(30):b.matrix(self.S,self.A)
+            self.idle(b)
+            self.assertEqual(self.typed(b),[(0,(0x29,)),(0,()),(0,(0x16,)),(0,(4,0x16)),(0,())],flavor)
+
+    def test_flavor_1_key_pressed_before_the_tap_hold_key_does_not_count_as_nested(self):
+        # First tap-hold tap is still on its way (keys are held back), then a second tap-hold key
+        # goes down and the earlier key is released: that is not a tap "inside" the second one.
+        b=self.flavored(1);self.set_mt(b,slot=70,code=0x222b)
+        for k in range(4):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',30))
+        b.reports.clear()
+        b.matrix(self.TH,submit=False);b.matrix(submit=False)              # tap queued, not yet sent
+        b.matrix(self.A,submit=False);b.matrix(self.A,70,submit=False);b.matrix(70,submit=False)
+        b.matrix(submit=False)                                             # second key released: its own tap
+        self.idle(b)
+        self.assertEqual([s for s in self.typed(b) if s[1]],[(0,(0x29,)),(0,(4,)),(0,(0x2b,))])
+        self.assertTrue(all(m==0 for m,_ in self.typed(b)))
+
+    def test_flavors_random_typing_never_loses_duplicates_or_sticks_a_key(self):
+        import random
+        plain={67:0x04,68:0x16,69:0x07}                    # a, s, d
+        taps={self.TH:0x29,70:0x2b}                         # two mod-tap keys: Esc / Tab
+        # Windows of 12 and 60 passes keep the 16-entry queue from overflowing at this (superhuman) rate.
+        for flavor,term,seed in ((1,12,1),(1,60,2),(2,12,3),(2,60,4),(1,12,5),(2,60,6),(1,60,7),(2,12,8)):
+            r=random.Random(seed)
+            b=self.flavored(flavor,term);self.set_mt(b,slot=70,code=0x222b)
+            for k in range(4):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',term))
+            b.reports.clear()
+            down=set();presses={k:0 for k in list(plain)+list(taps)}
+            for _ in range(400):
+                key=r.choice(list(presses))
+                if key in down:down.discard(key)
+                else:down.add(key);presses[key]+=1
+                for _ in range(r.choice((1,1,1,2,3,6,20))):b.matrix(*down)
+            b.matrix();b.drain(200)
+            self.assertEqual((b.mods(),b.held_keys(),b.faults()&2),(0,set(),0),(flavor,seed))
+            edges={u:0 for u in list(plain.values())+list(taps.values())};last=set()
+            for rep in b.reports:
+                now={k for k in rep[2:8] if k}
+                for u in now-last:edges[u]+=1
+                last=now
+            for slot,usage in plain.items():               # every ordinary press arrives exactly once
+                self.assertEqual(edges[usage],presses[slot],(flavor,seed,hex(usage)))
+            for slot,usage in taps.items():                # a tap-hold press is a tap or a hold, never both twice
+                self.assertLessEqual(edges[usage],presses[slot],(flavor,seed,hex(usage)))
+
+    def test_flavor_queue_overflow_degrades_without_stuck_keys(self):
+        # 20 different keys pressed while the tap-hold key is undecided: the first 16 are held back,
+        # the rest go straight through. Nothing sticks, and everything is released at the end.
+        b=self.flavored(2,5000)
+        keys=[22+i for i in range(12)]+[44+i for i in range(8)]
+        down=[self.TH]
+        b.matrix(*down)
+        for k in keys:
+            down.append(k);b.matrix(*down)
+        seen=set()
+        for rep in b.reports:seen|={k for k in rep[2:8] if k}
+        self.assertTrue(seen)                                   # the overflow keys were not held back
+        b.matrix();b.drain(300)
+        self.assertEqual((b.mods(),b.held_keys(),b.faults()&2),(0,set(),0))
+        self.assertEqual(b.transact(packet(7,0,18,0))[0],7)     # idle again: the setting can be changed
+
+    def test_flavor_is_saved_with_the_profile_and_keeps_the_backlight_level(self):
+        import test_persistence_device as pd
+        b=pd.SavedBoard(self.elf,self.image)
+        self.assertEqual(b.transact(packet(8,0,13))[3],0)
+        b.transact(packet(7,0,6,3));self.assertEqual(b.transact(packet(7,0,18,2))[0],7)
+        self.assertEqual(b.transact(packet(8,0,13))[3],1)
+        self.assertEqual(b.transact(packet(7,0,1,1))[0],7);self.assertEqual(b.transact(packet(8,0,13))[3],0)
+        fresh=pd.SavedBoard(self.elf,self.image,b.nv)
+        self.assertEqual((fresh.transact(packet(8,0,18))[3],fresh.transact(packet(8,0,6))[3]),(2,3))
+        self.assertEqual(fresh.transact(packet(8,0,13))[3],0)
+
     def test_runtime_mt_reserved_slots_and_gpio_holes_reject(self):
         b=self.board()
         for slot in (19,20,41,42,63,64,85,86,15,21):

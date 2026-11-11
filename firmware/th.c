@@ -35,6 +35,7 @@ enum { BAD_CONFIG = 1, QUEUE_FULL = 2, MACRO_WAIT = 4 };
 struct th_key {
     u16 elapsed, queued;
     u8 decision, was_down, phase, tap_visible, bound;
+    u8 mark;   /* th_defer_n when the key went down: later entries were pressed while it is held */
 };
 
 u32 th_shadow[ROWS];
@@ -46,6 +47,20 @@ u8 th_enabled;
 u8 th_context_seen, th_context, th_macro_was_active;
 u8 th_checked, th_valid;
 u16 th_passes;   /* matrix passes since boot (timing telemetry) */
+u8 th_flavor;
+/* Flavors 1 and 2 cannot decide at the first other key press, so keys pressed while a tap-hold
+ * key is undecided (or while its tap is still on its way to the host) are held back and shown
+ * to the stock scanner afterwards, one at a time and in the order they were pressed. An entry
+ * whose key was released before its turn is still shown as a full press and release.
+ * The queue holds 16 presses; with a timeout of at most 500 passes that is out of reach of
+ * ten fingers. Beyond it a key is no longer held back, and a repeated key can lose a press. */
+#define DEFER_MAX 16
+#define DEFER_PASSES 8          /* give up waiting for a keyboard report after this many passes */
+static u8 th_defer[DEFER_MAX];  /* matrix indices, oldest first */
+static u8 th_defer_n;
+static u16 th_defer_up;         /* bit j = entry j is physically released */
+static u8 th_head_shown, th_head_wait;
+static volatile u8 th_submit_seen;
 
 static unsigned usb_mode(void)
 {
@@ -219,6 +234,7 @@ static void context_changed(const u32 *physical)
 {
     unsigned k, row;
     replay_held_keys();
+    th_defer_n = th_defer_up = th_head_shown = 0;
     th_checked = 0;
     for (row = 0; row < ROWS; ++row) th_previous[row] = physical[row];
     for (k = 0; k < TH_MAX; ++k) {
@@ -227,6 +243,7 @@ static void context_changed(const u32 *physical)
         st->decision = IDLE;
         st->phase = NO_TAP;
         st->tap_visible = 0;
+        st->mark = 0;
         /* A key spanning a transport/OS switch must be released before reuse. */
         st->was_down = CFG[k].phys < NKEYS ? bit(physical, CFG[k].phys) : 0;
         st->bound = st->was_down && bound_kind(type_at(CFG[k].phys, physical_fn(physical) ^ inverted(CFG[k].phys)));
@@ -239,7 +256,9 @@ static u8 th_epoch_seen;
 
 int th_matrix_process(void)
 {
-    unsigned row, k, other, is_down, context, stable, j, another_tap;
+    unsigned row, k, other, is_down, context, stable, j, another_tap, tapped, gate;
+    u8 released[TH_MAX];
+    u16 age[TH_MAX];
     u32 physical[ROWS], changed[ROWS], pressed[ROWS];
     int result;
     unsigned fn;
@@ -275,6 +294,18 @@ int th_matrix_process(void)
         if (CFG[k].phys != 0xff) setbit(changed, CFG[k].phys, 0);
     stable = 1;
     for (row = 0; row < ROWS; ++row) if (changed[row]) stable = 0;
+    /* Held-back keys that were let go in this pass; `tapped` = 1 + index of the newest one. */
+    tapped = 0;
+    for (j = 0; j < th_defer_n; ++j)
+        if (!((th_defer_up >> j) & 1u) && !bit(physical, th_defer[j])) {
+            th_defer_up |= (u16)(1u << j);
+            if (j || !th_head_shown) tapped = j + 1;
+        }
+    for (k = 0; k < TH_MAX; ++k) {
+        released[k] = CFG[k].phys != 0xff && th_state[k].bound && th_state[k].was_down &&
+                      !bit(physical, CFG[k].phys);
+        age[k] = th_state[k].elapsed;
+    }
     for (k = 0; k < TH_MAX; ++k) {
         const struct th_cfg *cfg = CFG + k;
         struct th_key *st = th_state + k;
@@ -304,8 +335,15 @@ int th_matrix_process(void)
         if (is_down && !st->was_down) {
             st->decision = PENDING;
             st->elapsed = 0;
+            st->mark = th_defer_n;
         }
         if (st->decision == PENDING && is_down) {
+            if (th_flavor == TH_HOLD_ON_TAP) {
+                /* Another key, or a tap-hold key pressed after this one, went down and up again. */
+                other = tapped > st->mark;
+                for (j = 0; j < TH_MAX; ++j)
+                    if (j != k && released[j] && age[j] < st->elapsed) other = 1;
+            } else if (th_flavor == TH_HOLD_ON_TIMEOUT) other = 0;
             if (st->elapsed < 65535) ++st->elapsed;
             if (other || st->elapsed >= cfg->term_passes) st->decision = HOLD;
         }
@@ -339,13 +377,47 @@ int th_matrix_process(void)
          * tap inserted before later-row releases may land only in NKRO and
          * never be observed by our endpoint-1 submit hook. Wait for a stable
          * ordinary matrix and fewer than five existing keys instead. */
-        if (st->phase == NO_TAP && st->queued && stable && !another_tap &&
+        /* ...and after every key that was pressed before this one and is still held back. */
+        if (st->phase == NO_TAP && st->queued && stable && !another_tap && !st->mark &&
             REPORT[0x1d] < 5 && !owner(cfg->tap_slot, usage(cfg->tap_slot, 0))) {
             st->phase = DOWN;
         }
         if (st->phase == DOWN_SENT) st->phase = UP;
         st->tap_visible = st->phase == DOWN || st->phase == DOWN_SENT;
         setbit(th_shadow, cfg->tap_slot, st->tap_visible);
+    }
+    if (th_flavor != TH_HOLD_ON_PRESS) {
+        /* The oldest held-back key waits for every tap-hold key pressed before it (mark 0)
+         * that is still undecided or whose tap has not gone out yet. */
+        gate = 0;
+        for (k = 0; k < TH_MAX; ++k)
+            if (CFG[k].phys != 0xff && !th_state[k].mark &&
+                (th_state[k].decision == PENDING || th_state[k].queued ||
+                 th_state[k].phase != NO_TAP)) gate = 1;
+        if (gate || th_defer_n)
+            for (j = 0; j < NKEYS && th_defer_n < DEFER_MAX; ++j) {
+                if (!bit(pressed, j)) continue;
+                for (k = 0; k < TH_MAX; ++k)
+                    if (CFG[k].phys == j && th_state[k].bound) break;
+                if (k == TH_MAX) th_defer[th_defer_n++] = (u8)j;
+            }
+        if (th_head_shown) {
+            /* The oldest entry is visible; drop it once its press went out (it then follows the
+             * physical key again, or is released if the key is already up). */
+            if (th_submit_seen || ++th_head_wait >= DEFER_PASSES) {
+                for (j = 1; j < th_defer_n; ++j) th_defer[j - 1] = th_defer[j];
+                --th_defer_n;
+                th_defer_up >>= 1;
+                th_head_shown = 0;
+                for (k = 0; k < TH_MAX; ++k) if (th_state[k].mark) --th_state[k].mark;
+            }
+        } else if (th_defer_n && !gate) {
+            th_head_shown = 1;
+            th_head_wait = 0;
+            th_submit_seen = 0;
+        }
+        for (j = 0; j < th_defer_n; ++j) setbit(th_shadow, th_defer[j], 0);
+        if (th_head_shown) setbit(th_shadow, th_defer[0], 1);
     }
     for (row = 0; row < ROWS; ++row) th_previous[row] = physical[row];
     result = STOCK_MATRIX(); /* includes the UNMODIFIED stock macro_player_tick */
@@ -361,6 +433,7 @@ void th_usb_submit(const u8 *report, unsigned length)
 {
     unsigned k, i, found, key;
     STOCK_USB(report, length);
+    if (length == 8) th_submit_seen = 1;
     if (!th_enabled || length != 8 || (MACRO_FLAGS & 2)) return;
     for (k = 0; k < TH_MAX; ++k) {
         struct th_key *st = th_state + k;
@@ -382,6 +455,7 @@ IN_HOLE_A int th_busy(void)
     unsigned i;
     for (i = 0; i < ROWS; ++i) if (MATRIX[i]) return 1;
     for (i = 0; i < NKEYS; ++i) if (th_keys[i] & 1) return 1;
+    if (th_defer_n) return 1;
     for (i = 0; i < TH_MAX; ++i)
         if (th_state[i].was_down || th_state[i].decision ||
             th_state[i].queued || th_state[i].phase) return 1;

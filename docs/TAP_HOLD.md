@@ -12,8 +12,18 @@ with an empty key, other layers) is rejected before RAM changes.
 
 ## Behavior
 
-* Hold is chosen when another key is pressed while the key is pending, or when the
-  timeout expires. For **layer-tap, pressing a modifier does not count** as "another
+* Hold is chosen when the timeout expires, or earlier according to the setting
+  **Flow84 tab → Typing → Tap-hold becomes hold**:
+  * *When another key is pressed* (default, the behavior of 0.1/0.2): best for keys such as
+    Caps Lock that are not part of normal typing.
+  * *When another key is pressed and released* while the key is down: a quick roll
+    (`key down, next key down, key up`) stays a tap, so it suits keys you type through.
+  * *Only after the timeout*: other keys never decide.
+
+  In the last two modes the keys pressed while a tap-hold key is undecided are held back
+  and sent right after the decision, in the order they were pressed (so text typed in a roll
+  comes out in order, at the cost of that short delay). Up to 16 presses are held back.
+* In the default mode hold is chosen when another key is pressed while the key is pending. For **layer-tap, pressing a modifier does not count** as "another
   key" — `Ctrl+Space` with `Space` on LT still sends the chord (this was a real bug:
   the language switch stopped working).
 * The tap is emitted when the key is released. This is inherent to tap-hold and gives

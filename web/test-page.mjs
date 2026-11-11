@@ -31,6 +31,7 @@ function device(ids, productName, collections, onSend) {
 /** Minimal model of the VIA firmware's Raw HID interface. */
 function viaFirmware(version, { silent = false } = {}) {
   const st = { keymap: new Uint8Array(1056), macros: new Uint8Array(192), settings: { 6: 2, 10: 0, 11: 0, 14: 0 }, unsaved: 0, saves: 0 };
+  if (version[1] >= 3) st.settings[18] = 0;                 // tap-hold mode exists from 0.3.0
   for (let i = 0; i < 528; i++) st.keymap[i * 2 + 1] = 4 + i % 100;
   const factory = st.keymap.slice();
   const dev = device(NORMAL, 'Flow84@Lofree', [{ usagePage: 0xff60, usage: 0x61, outputReports: [{ reportId: 0 }] }], (d, id, q) => {
@@ -46,8 +47,8 @@ function viaFirmware(version, { silent = false } = {}) {
       case 6: if (version[1] < 3) r[0] = 0xff; else { st.keymap.set(factory); st.unsaved = 1; } break;
       case 0x0e: r.fill(0, 4); r.set(st.macros.subarray(off, off + n), 4); break;
       case 0x0f: st.macros.set(q.subarray(4, 4 + Math.min(n, 192 - off)), off); st.unsaved = 1; break;
-      case 8: r[3] = q[2] === 13 ? st.unsaved : st.settings[q[2]] ?? 0; break;
-      case 7: if (q[2] === 1) { st.unsaved = 0; st.saves++; } else { st.settings[q[2]] = q[3]; st.unsaved = 1; } break;
+      case 8: if (q[2] === 13) r[3] = st.unsaved; else if (q[2] in st.settings) r[3] = st.settings[q[2]]; else r[0] = 0xff; break;
+      case 7: if (q[2] === 1) { st.unsaved = 0; st.saves++; } else if (q[2] in st.settings) { st.settings[q[2]] = q[3]; st.unsaved = 1; } else r[0] = 0xff; break;
       default: r[0] = 0xff;
     }
     d.emit(0, r);
@@ -114,8 +115,9 @@ const profiled = (version) => {
   Object.assign(fw.st.settings, { 6: 4, 10: 5, 11: 1, 14: 3 });
   return fw;
 };
-const same = (a, b) => assert.deepEqual([Buffer.from(a.st.keymap).toString('hex'), Buffer.from(a.st.macros).toString('hex'), a.st.settings],
-  [Buffer.from(b.st.keymap).toString('hex'), Buffer.from(b.st.macros).toString('hex'), b.st.settings]);
+const known = (fw) => Object.fromEntries([6, 10, 11, 14].map(id => [id, fw.st.settings[id]]));
+const same = (a, b) => assert.deepEqual([Buffer.from(a.st.keymap).toString('hex'), Buffer.from(a.st.macros).toString('hex'), known(a)],
+  [Buffer.from(b.st.keymap).toString('hex'), Buffer.from(b.st.macros).toString('hex'), known(b)]);
 
 try {
   // 1. Upgrade from the VIA firmware 0.2.0: backup, flash, automatic restore and save.

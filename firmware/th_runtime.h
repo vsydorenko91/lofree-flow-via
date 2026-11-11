@@ -11,6 +11,11 @@ struct th_cfg {
     unsigned short term_passes;
 };
 extern struct th_cfg th_runtime_cfg[TH_MAX];
+/* When does a tap-hold key become "hold" (apart from the timeout)?
+ * 0: as soon as another key is pressed; 1: when another key is pressed and released while it
+ * is down; 2: never, only the timeout. Change it only while th_busy() is 0. */
+enum { TH_HOLD_ON_PRESS, TH_HOLD_ON_TAP, TH_HOLD_ON_TIMEOUT, TH_FLAVORS };
+extern unsigned char th_flavor;
 extern unsigned char th_checked;
 extern unsigned short th_passes;
 /* The adapter publishes validated descriptors and virtual actions only at idle. */

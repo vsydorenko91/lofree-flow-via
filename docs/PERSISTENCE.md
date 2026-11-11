@@ -39,7 +39,8 @@ item count, flags and a CRC16.
   saved by 0.2.0; they load unchanged).
 * Flags: snapshot, more-records-follow, first-record-of-save, blob-reset.
 
-The light byte is `0x80 | tap_term<<5 | mode<<3 | color`.
+The light byte is `0x80 | tap_term<<5 | mode<<3 | color`. The backlight byte carries the level
+(0..4) in its low nibble and the tap-hold decision mode in bits 4..5.
 
 A save is applied only if all of its records are valid and the last one has no
 "more" flag, so a power cut leaves the old or the new state, never a mix (the native

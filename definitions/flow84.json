@@ -296,6 +296,20 @@
                 "Long (320 ms)",
                 "Very long (500 ms)"
               ]
+            },
+            {
+              "label": "Tap-hold becomes hold",
+              "type": "dropdown",
+              "content": [
+                "id_flow_tap_mode",
+                0,
+                18
+              ],
+              "options": [
+                "When another key is pressed (default)",
+                "When another key is pressed and released",
+                "Only after the timeout"
+              ]
             }
           ]
         },

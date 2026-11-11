@@ -41,7 +41,7 @@ the keyboard did before still works; the patch only adds on top.
 | Feature | Notes |
 |---|---|
 | Key remapping on all four layers | Windows / Mac × base / Fn, live in VIA |
-| Mod-tap `MT(mods, kc)` and layer-tap `LT(1\|3, kc)` | up to 4 positions per Windows/Mac pair; timeout setting in VIA |
+| Mod-tap `MT(mods, kc)` and layer-tap `LT(1\|3, kc)` | up to 4 positions per Windows/Mac pair; timeout and hold rule selectable in VIA |
 | Macros `M0..M7` | text, key taps/down/up, delays; run on the stock macro player |
 | White key backlight 0..4, side RGB color (8) and effect (steady / breathing / off) | controls in the VIA menu |
 | **Save to keyboard** | stores everything on the keyboard; survives power cycles |
