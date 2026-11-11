@@ -197,6 +197,47 @@ class DeltaStore(unittest.TestCase):
         self.assertEqual(f.load()[4], b'')
         self.assertEqual(f.errors, [])
 
+    def test_full_blob_takes_ten_records_and_leaves_room_for_35_keys(self):
+        macro = bytes((i % 250) + 1 for i in range(BLOB_MAX))
+        f = self.flash()
+        self.assertEqual(f.save({}, 2, 0x80, macro), 1)
+        self.assertEqual(f.load()[3:], (0x80, macro, 11))         # 1 settings record + 10 blob records
+        keys = {p: 0x2000 + p for p in range(35)}
+        f = self.flash()
+        self.assertEqual(f.save(keys, 2, 0x80, macro), 1)
+        self.assertEqual(f.load()[1:], (keys, 2, 0x80, macro, SLOTS))
+        f = self.flash()
+        self.assertEqual(f.save({**keys, 35: 0x2023}, 2, 0x80, macro), -2)   # DS_FULL before any write
+        self.assertEqual((f.log, f.errors), ([], []))
+
+    def test_profile_saved_with_16_byte_chunks_still_loads(self):
+        def crc(r):
+            c = 0xffff
+            for i, b in enumerate(r):
+                if i in (6, 7):
+                    continue
+                c ^= b << 8
+                for _ in range(8):
+                    c = ((c << 1) ^ 0x1021 if c & 0x8000 else c << 1) & 0xffff
+            return c
+
+        macro = bytes(range(1, 41))
+        chunks = [macro[i:i + 16] for i in range(0, len(macro), 16)]
+        recs = [bytearray([0xc7, 0, 1, 4 | 2, 3, 0x80, 0, 0, 5, 0, 0x04, 0x00]) + bytes(16)]
+        for i, part in enumerate(chunks):
+            flags = (2 if i + 1 < len(chunks) else 0) | (8 if i == 0 else 0)
+            recs.append(bytearray([0xc9, 0, len(part), flags, i * 16, 0, 0, 0]) + part + bytes(20 - len(part)))
+        f = self.flash()
+        for slot, r in enumerate(recs):
+            r[1] = slot
+            r[6:8] = crc(r).to_bytes(2, 'little')
+            f.data[slot * REC:(slot + 1) * REC] = r
+        self.assertEqual(f.load(), (1, {5: 0x0004}, 3, 0x80, macro, len(recs)))
+        self.assertEqual(f.save({5: 0x0004}, 3, 0x80, macro), 2)  # unchanged: nothing is rewritten
+        self.assertEqual(f.save({5: 0x0004}, 3, 0x80, macro + b'!'), 1)
+        self.assertEqual(f.load()[4], macro + b'!')
+        self.assertEqual(f.errors, [])
+
     def test_blob_and_keys_share_one_atomic_save_and_compact_together(self):
         f = self.flash()
         a = {5: 0x0004, 6: 0x0005}

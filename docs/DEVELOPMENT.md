@@ -23,12 +23,15 @@ python tools/make_web.py         # stage web/firmware and web/flow84.json
 ```sh
 PYTHONPATH=tools python -m unittest discover -s tests
 node web/test-core.mjs           # after make_web.py
+node web/test-page.mjs           # the flasher page against a fake WebHID keyboard
 ```
 
 * Emulator tests (`test_device_emulated`, `test_persistence_device`, `test_macro_device`,
   `test_oem_*`) run the real stock code plus the built image in Unicorn.
 * Native tests compile `dstore.c`, `macro.c`, `protocol.c` with clang/cc and drive them via ctypes.
 * `test_recovery` rehearses flash/restore against a fake HID layer.
+* `test_web_profile` runs the flasher's backup/restore code (`web/profile-core.js`, via node)
+  against the emulated firmware; it is skipped when node is not installed.
 * `test_bootloader_bounds` needs `local/bootloader-d386f6ff.bin`, a dump of the keyboard's
   own bootloader that is deliberately not in the repository; it is skipped without it.
 

@@ -103,6 +103,33 @@ class PersistenceDevice(unittest.TestCase):
         self.assertEqual(fresh.transact(packet(8,0,14))[3],3)
         self.assertEqual([term(fresh,0),term(fresh,1)],[500,500])
 
+    def test_factory_reset_is_ram_only_until_saved(self):
+        b=self.board();key=packet(4,0,3,1);macro=packet(0x0e,0,0,4)
+        factory=b.transact(key)[4:6]
+        self.change(b);self.assertEqual(b.transact(packet(0x0f,0,0,2,ord('h'),ord('i')))[0],0x0f)
+        self.assertEqual(self.save(b)[0],7);self.assertEqual(self.status(b),b'Saved')
+        ops=list(b.ops)
+        for bad in (packet(7,0,16,0),packet(7,0,16,2)):
+            self.assertEqual(b.transact(bad)[0],0xff)
+        self.assertEqual(b.transact(key)[4:6],b'\0\x05')
+        self.assertEqual(b.transact(packet(7,0,16,1))[0],7)
+        self.assertEqual(b.transact(key)[4:6],factory)
+        self.assertEqual(b.transact(macro)[4:8],bytes(4))
+        self.assertEqual(self.status(b),b'Unsaved changes');self.assertEqual(b.ops,ops)
+        kept=self.board(b.nv)                                  # not saved: the old profile is still there
+        self.assertEqual(kept.transact(key)[4:6],b'\0\x05');self.assertEqual(kept.transact(macro)[4:6],b'hi')
+        self.assertEqual(self.save(b)[0],7);self.assertEqual(self.status(b),b'Saved')
+        fresh=self.board(b.nv)
+        self.assertEqual(fresh.transact(key)[4:6],factory);self.assertEqual(fresh.transact(macro)[4:8],bytes(4))
+
+    def test_via_keymap_reset_command_keeps_macros(self):
+        b=self.board();key=packet(4,0,3,1);factory=b.transact(key)[4:6]
+        self.change(b);b.transact(packet(0x0f,0,0,2,ord('h'),ord('i')))
+        self.assertEqual(b.transact(packet(6))[0],6)
+        self.assertEqual(b.transact(key)[4:6],factory)
+        self.assertEqual(b.transact(packet(0x0e,0,0,4))[4:6],b'hi')
+        self.assertEqual(b.ops,[])
+
     def test_edits_queries_and_generic_save_never_write_flash(self):
         b=self.board();self.assertEqual(self.status(b),b'No saved profile')
         self.change(b);self.assertEqual(self.status(b),b'Unsaved changes')
@@ -231,8 +258,8 @@ class PersistenceDevice(unittest.TestCase):
 
     def test_firmware_version_is_reported(self):
         b=self.board()
-        self.assertEqual(b.transact(packet(2,4))[2:6],bytes([0,0,2,0]))
-        self.assertEqual(b.transact(packet(8,0,15))[3],2)
+        self.assertEqual(b.transact(packet(2,4))[2:6],bytes([0,0,3,0]))
+        self.assertEqual(b.transact(packet(8,0,15))[3],3)
 
     def test_idle_after_edit_and_save_emits_no_unsolicited_usb_packets(self):
         b=self.board();self.change(b)

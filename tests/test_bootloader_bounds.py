@@ -140,6 +140,54 @@ class BootloaderBounds(unittest.TestCase):
         self.assertEqual(writes, [(0, 0x9F7F, 32)])
         self.assertGreater(writes[0][1] * 4 + writes[0][2], 0x27E00)
 
+    def reset(self, marker, mmio=lambda: 0):
+        """Run the bootloader from reset; return where it ends up and the flash reads it made."""
+        from unicorn import UC_MODE_ARM, UC_HOOK_MEM_READ, UcError
+        u = Uc(UC_ARCH_ARM, UC_MODE_ARM)
+        u.mem_map(0, 0x4000)
+        u.mem_write(0, self.boot)
+        u.mem_map(0x400000, 0x10000)
+        u.mem_map(0x800000, 0x10000)
+        seen = {'reads': []}
+
+        def on_mmio(uc, access, address, size, value, data):
+            uc.mem_write(address, (mmio() & 0xffffffff).to_bytes(4, 'little')[:size])
+
+        def on_code(uc, address, size, data):
+            if address == 0x127C:      # flash read(selector, word, bytes, out)
+                sel, word, n, out = (uc.reg_read(r) for r in (UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, 3 + UC_ARM_REG_R0))
+                seen['reads'].append((sel, word, n))
+                uc.mem_write(out, (marker if (sel, word) == (1, 0x807C) else b'').ljust(n, b'\xff')[:n])
+                uc.reg_write(UC_ARM_REG_PC, uc.reg_read(UC_ARM_REG_LR))
+            elif address >= 0x2000:
+                seen['end'] = ('application', address)
+                uc.emu_stop()
+            elif address == 0x1358:
+                seen['end'] = ('update mode', address)
+                uc.emu_stop()
+        u.hook_add(UC_HOOK_MEM_READ, on_mmio, begin=0x800000, end=0x80FFFF)
+        u.hook_add(UC_HOOK_CODE, on_code)
+        try:
+            u.emu_start(0, 0x10000, count=500000)
+        except UcError:
+            pass
+        return seen.get('end'), seen['reads']
+
+    def test_only_the_sector_a_marker_keeps_the_bootloader_in_update_mode(self):
+        """There is no key or pin check: an image that passed the upload CRC is always started."""
+        import random
+        body = bytes([0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC])
+        mark = lambda kind: body + bytes([kind, (0x55 - sum(body) - kind) & 255])
+        for kind in (0xD1, 0xD2, 0xD3):
+            self.assertEqual(self.reset(mark(kind)), (('update mode', 0x1358), [(1, 0x807C, 8)]))
+        for bad in (b'', mark(0xD4), mark(0xD1)[:7] + b'\0', bytes(8)):
+            self.assertEqual(self.reset(bad), (('application', 0x2020), [(1, 0x807C, 8)]))
+        # No hardware register value changes the decision (they are only configured, never tested).
+        r = random.Random(1)
+        for source in [lambda: 0xFFFFFFFF] + [lambda: r.getrandbits(32)] * 100:
+            self.assertEqual(self.reset(b'', source)[0], ('application', 0x2020))
+            self.assertEqual(self.reset(mark(0xD1), source)[0], ('update mode', 0x1358))
+
 
 if __name__ == '__main__':
     unittest.main()

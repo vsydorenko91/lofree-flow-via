@@ -45,6 +45,8 @@ the keyboard did before still works; the patch only adds on top.
 | Macros `M0..M7` | text, key taps/down/up, delays; run on the stock macro player |
 | White key backlight 0..4, side RGB color (8) and effect (steady / breathing / off) | controls in the VIA menu |
 | **Save to keyboard** | stores everything on the keyboard; survives power cycles |
+| Reset to factory | one button in the VIA menu: factory keys and empty macros |
+| Profile backup | the web flasher keeps your profile across firmware updates |
 
 ## What this is, and what it is not
 
@@ -63,8 +65,10 @@ the keyboard did before still works; the patch only adds on top.
 
 * **Flow84 only, one tested unit.** Everything here was verified on one Flow84 over USB. The Flow100 is not supported yet.
   Sleep/wake and Bluetooth were not specifically tested with this firmware.
-* **Flashing erases your saved profile.** Export your VIA layout first. It is a property of
-  the vendor update procedure and cannot be avoided.
+* **Flashing erases your saved profile.** It is a property of the vendor update procedure. When
+  the keyboard already runs this firmware, the web flasher backs the profile up (keys, macros,
+  lighting, tap-hold timeout) before flashing, restores and saves it afterwards, and offers the
+  backup as a file.
 * **Saved profile size is small.** Up to 85 changed keys, a 192-byte macro buffer and the
   settings share one 476-byte flash area. If it does not fit, Save fails before writing.
   The firmware cannot write its own code area, and the board has no EEPROM

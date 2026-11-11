@@ -209,6 +209,21 @@ static void copy_active(void)
     }
     th_checked=0;
 }
+static void load_rom(void)
+{
+    unsigned i,n;
+    for(i=0;i<528;++i)
+        for(n=0;n<4;++n)banks[i][n]=*((const volatile u8 *)rom[layer_of(i)]+local_of(i)*4+n);
+}
+/* VIA command 06 and the menu button: factory keymap in RAM only. Nothing is written
+ * to flash until Save; refused while a key is held or a save is running. */
+static int factory_reset(void *user)
+{
+    (void)user;
+    if(th_busy()||saving)return 0;
+    load_rom();copy_active();dirty=1;
+    return 1;
+}
 /* Called before processing input: an OS transition must publish descriptors
  * before the engine resets held-key state for that transition. */
 void via_th_sync(void)
@@ -364,6 +379,11 @@ static int profile_command(const u8 q[32],u8 r[32])
         if(q[3]>=DS_SLOTS || !ds_rd(0,(u16)(q[3]*DS_REC),DS_REC,r+3)){r[0]=0xff;}
         return 1;
     }
+    if(q[2]==16){
+        /* Button: factory keymap and empty macros, RAM only (Save makes it permanent). */
+        if(q[0]==7 && (q[3]!=1 || !factory_reset(0) || !macro_rs(0)))r[0]=0xff;
+        return 1;
+    }
     if(q[2]==13){if(q[0]==8)r[3]=unsaved();return 1;}   /* VIA toggle: unsaved changes; a click is acknowledged, no effect */
     if(q[0]==7){
         if(q[2]!=1 || q[3]!=1 || !save_profile())r[0]=0xff;
@@ -387,15 +407,11 @@ static int profile_command(const u8 q[32],u8 r[32])
 }
 static int initialize(void)
 {
-    unsigned i,n,layer,slot;
     if(initialized)return 1;
     if(th_busy())return 0;
-    for(i=0;i<528;++i){
-        layer=layer_of(i);slot=local_of(i);
-        for(n=0;n<4;++n)banks[i][n]=*((const volatile u8 *)rom[layer]+slot*4+n);
-    }
+    load_rom();
     active_os=OPTIONS[9]!=0;
-    if(!flow_via_init(&protocol,0,read_action,commit,0,0,0))return 0;
+    if(!flow_via_init(&protocol,0,read_action,commit,0,factory_reset,0))return 0;
     protocol.macros=&macro_ops;macro_dirty=1;macro_apply();
     {
         ds_state st;unsigned k;

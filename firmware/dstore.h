@@ -13,7 +13,8 @@
  * Record (28 B), crc16 LE @6 over bytes 0..5 and 8..27:
  *   key record  tag 0xC7: seq, n(0..5), flags, level (0xFF none), light
  *               (0 none, else 0x80|mode<<3|color), then n x {u16 pos, u16 code}.
- *   blob record tag 0xC9: seq, n(0..16), flags, offset u16 LE @4, data @8.
+ *   blob record tag 0xC9: seq, n(0..20), flags, offset u16 LE @4, data @8
+ *               (records written by 0.2.0 carry at most 16 bytes and load unchanged).
  * flags: bit0 snapshot (reset everything), bit1 "more records follow in this
  * save", bit2 "first record of a save", bit3 "blob reset" (clear the blob).
  * A save is applied only if all its records are valid and the last has bit1
@@ -23,7 +24,7 @@
 #define DS_SLOTS 17u
 #define DS_REC 28u
 #define DS_PER 5u
-#define DS_CHUNK 16u
+#define DS_CHUNK 20u
 #define DS_MAX_ENTRIES (DS_SLOTS*DS_PER)
 #define DS_BLOB_MAX 192u
 #define DS_NO_LEVEL 0xffu

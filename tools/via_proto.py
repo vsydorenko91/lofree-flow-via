@@ -12,7 +12,7 @@ import sys
 import time
 
 HERE = Path(__file__).resolve().parents[1]
-FIRMWARE_VERSION = 0x000200   # major<<16 | minor<<8 | patch; keep in sync with firmware/version.h
+FIRMWARE_VERSION = 0x000300   # major<<16 | minor<<8 | patch; keep in sync with firmware/version.h
 LAYERS = ('win', 'winfn', 'mac', 'macfn')
 ROWS, COLS, SLOTS = 6, 22, 132
 SUPPORTED_KEYBOARD_USAGES = set(range(4, 0xA5))   # all QMK basic keycodes; OEM boot-report path carries them (emulator-verified)
@@ -34,8 +34,8 @@ FACTORY_LABELS = {
     (5, 0x00): ('Bluetooth 1', 'BT1', 'Stock Bluetooth slot 1; hold may enter pairing.'),
     (5, 0x01): ('Bluetooth 2', 'BT2', 'Stock Bluetooth slot 2; hold may enter pairing.'),
     (5, 0x02): ('Bluetooth 3', 'BT3', 'Stock Bluetooth slot 3; hold may enter pairing.'),
-    (5, 0x04): ('Factory lighting mode (unverified)', 'Mode?', 'Firmware cycles a 3-state index. Physical effect on this white-only Flow84 is unverified. Stock handler saves settings.'),
-    (5, 0x07): ('Factory color index (unsupported)', 'Color?', 'Firmware-only color index 0..7; no RGB key backlight on this white-only Flow84. Physical side-light behavior is unverified. Stock handler saves settings.'),
+    (5, 0x04): ('Side RGB effect', 'RGB FX', 'Cycles the side RGB effect: steady, breathing, off. Stock handler saves settings.'),
+    (5, 0x07): ('Side RGB color', 'RGB Col', 'Cycles the side RGB color through 8 colors. Stock handler saves settings.'),
     (5, 0x0F): ('Backlight brightness up', 'BL+', 'Raises stock brightness index up to 4. Stock handler saves settings.'),
     (5, 0x10): ('Backlight brightness down', 'BL-', 'Lowers stock brightness index down to 0. Stock handler saves settings.'),
     (5, 0x18): ('Windows mode', 'WinOS', 'Selects stock Windows OS bank. Stock handler changes saved settings.'),

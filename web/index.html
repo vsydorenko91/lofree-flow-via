@@ -31,7 +31,7 @@
   .choice input:focus-visible + .card { outline: 2px solid var(--acc); outline-offset: 2px; }
   .choice b { display:block; margin-bottom: 4px; }
   .choice small { color: var(--mut); }
-  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg);
+  button, a.btn { font: inherit; text-decoration: none; display: inline-block; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg);
            padding: 9px 16px; cursor: pointer; }
   button.primary { background: var(--acc); color: var(--accfg); border-color: var(--acc); font-weight: 600; }
   button:disabled { opacity: .45; cursor: not-allowed; }
@@ -59,7 +59,7 @@
     <b>Before you start</b>
     <ul>
       <li>Use a USB-C <b>cable</b>, with the keyboard's switch on <b>USB</b> (not Bluetooth).</li>
-      <li>Flashing <b>erases the saved profile</b> (remaps, macros, lighting). Export your VIA layout first.</li>
+      <li>Flashing <b>erases the saved profile</b> (remaps, macros, lighting). If the keyboard already runs the VIA firmware, this page backs the profile up first and puts it back afterwards.</li>
       <li>Do not unplug during the upload (about a minute). If it is interrupted, the keyboard stays in its bootloader and you can simply run the flash again.</li>
       <li>This firmware is for the <b>Lofree Flow84 only</b> (84 keys). Do <b>not</b> flash it to a Flow100 or any other keyboard.</li>
       <li>This is unofficial, third-party firmware, tested on one Flow84. You flash at your own risk.</li>
@@ -79,13 +79,27 @@
   <h2>2. Flash</h2>
   <div class="card">
     <label class="check"><input type="checkbox" id="ack"> <span>I understand that this replaces the keyboard firmware and erases its saved profile.</span></label>
+    <label class="check"><input type="checkbox" id="keep" checked> <span>Back up my keys, macros and settings first, and restore them after flashing the VIA firmware.</span></label>
     <div class="row">
       <button class="primary" id="go" disabled>Connect keyboard and flash</button>
       <button id="boot" hidden>Select bootloader device</button>
+      <button id="pick" hidden>Select the keyboard to restore the profile</button>
     </div>
     <progress id="bar" value="0" max="1" hidden></progress>
     <div id="status"></div>
     <pre id="log" hidden></pre>
+  </div>
+
+  <div id="backup" hidden>
+    <h2>Profile backup</h2>
+    <div class="card">
+      <p id="backup-info"></p>
+      <div class="row">
+        <a id="backup-file" class="btn" download="flow84-profile.json">Download the backup file</a>
+        <button id="backup-restore">Restore this backup to the keyboard</button>
+      </div>
+      <div id="backup-status"></div>
+    </div>
   </div>
 
   <h2>After installing VIA</h2>
@@ -94,11 +108,12 @@
     then in <b>Design</b> load <a href="flow84.json" download>flow84.json</a> and authorize the Flow84. Use <b>Flow84 tab → Save to keyboard</b> to keep your changes across power cycles.</p>
     <p class="sub">Stuck in the bootloader or the keyboard does not enumerate? Run the flash again; the bootloader accepts a new upload at any time. See docs/RECOVERY.md in the project repository.</p>
   </div>
-  <p class="sub" style="margin-top:28px">Unofficial project, not affiliated with Lofree. Developed with the help of AI (Claude) and tested on real hardware. Open source (MIT).</p>
+  <p class="sub" style="margin-top:28px">Unofficial project, not affiliated with Lofree. Tested on real hardware. Open source (MIT).</p>
 </main>
 
 <script type="module">
 import { buildReports, upload, sha256Hex, NORMAL, BOOT, RESET_REPORT_ID, RESET_DATA, STOCK_SHA256 } from './flasher-core.js';
+import { RAW, readProfile, writeProfile, checkProfile } from './profile-core.js';
 
 const $ = (id) => document.getElementById(id);
 const logEl = $('log'), statusEl = $('status'), bar = $('bar'), go = $('go'), bootBtn = $('boot'), ack = $('ack');
@@ -111,10 +126,16 @@ if (!('hid' in navigator)) { $('unsupported').style.display = 'block'; }
 
 async function load() {
   manifest = await (await fetch('firmware/manifest.json', { cache: 'no-cache' })).json();
-  for (const key of ['via', 'stock']) $('hash-' + key).textContent = `SHA-256 ${manifest.images[key].sha256.slice(0, 16)}…`;
+  for (const key of ['via', 'stock']) {
+    const m = manifest.images[key];
+    $('hash-' + key).textContent = `${m.version ? 'Version ' + m.version + ' · ' : ''}SHA-256 ${m.sha256.slice(0, 16)}…`;
+  }
   refresh();
 }
-const refresh = () => { go.disabled = busy || !ack.checked || !('hid' in navigator) || !manifest; };
+const refresh = () => {
+  go.disabled = busy || !ack.checked || !('hid' in navigator) || !manifest;
+  $('backup-restore').disabled = busy || !('hid' in navigator);
+};
 ack.addEventListener('change', refresh);
 
 async function fetchImage(key) {
@@ -142,6 +163,79 @@ function transportFor(device) {
     }),
   };
 }
+
+// The Raw HID (VIA) interface as the transport used by profile-core.js.
+const RAW_FILTER = { vendorId: NORMAL.vendorId, productId: NORMAL.productId, usagePage: RAW.usagePage, usage: RAW.usage };
+const isRaw = (d) => d.vendorId === NORMAL.vendorId && d.productId === NORMAL.productId &&
+  d.collections.some(c => c.usagePage === RAW.usagePage && c.usage === RAW.usage);
+const isUpdate = (d) => d.vendorId === NORMAL.vendorId && d.productId === NORMAL.productId &&
+  d.collections.some(c => c.usagePage === NORMAL.usagePage && c.usage === NORMAL.usage);
+async function withRaw(device, fn) {
+  if (!device.opened) await device.open();
+  const queue = [], waiters = [];
+  const onReport = (e) => {
+    if (e.reportId !== 0) return;
+    const r = new Uint8Array(e.data.buffer.slice(e.data.byteOffset, e.data.byteOffset + e.data.byteLength));
+    const w = waiters.shift();
+    if (w) { clearTimeout(w.timer); w.resolve(r); } else queue.push(r);
+  };
+  device.addEventListener('inputreport', onReport);
+  try {
+    return await fn({
+      send: (q) => { queue.length = 0; return device.sendReport(0, q); },
+      receive: (ms) => queue.length ? Promise.resolve(queue.shift()) : new Promise((resolve, reject) => {
+        const w = { resolve, timer: setTimeout(() => { waiters.splice(waiters.indexOf(w), 1); reject(new Error('the keyboard did not answer')); }, ms) };
+        waiters.push(w);
+      }),
+    });
+  } finally {
+    device.removeEventListener('inputreport', onReport);
+    try { await device.close(); } catch { /* unplugged */ }
+  }
+}
+const findRaw = async () => (await navigator.hid.getDevices()).find(isRaw) || null;
+async function waitForRaw(timeoutMs) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) { const d = await findRaw(); if (d) return d; await sleep(250); }
+  return null;
+}
+
+// The last backup is kept in this browser and offered as a file.
+const STORE = 'flow84-via-profile';
+let lastBackup = null;                    // also the fallback when the browser blocks localStorage
+function storedBackup() {
+  if (lastBackup) return lastBackup;
+  try { const b = JSON.parse(localStorage.getItem(STORE)); checkProfile(b.profile); return b; } catch { return null; }
+}
+function showBackup() {
+  const b = storedBackup();
+  $('backup').hidden = !b;
+  if (!b) return;
+  $('backup-info').textContent = `Backup taken ${new Date(b.time).toLocaleString()} from firmware ${b.profile.firmware}. It is kept in this browser; download the file to keep it elsewhere.`;
+  $('backup-file').href = 'data:application/json,' + encodeURIComponent(JSON.stringify(b.profile, null, 2));
+}
+function keepBackup(profile) {
+  lastBackup = { time: Date.now(), profile };
+  try { localStorage.setItem(STORE, JSON.stringify(lastBackup)); } catch { /* blocked: kept for this page only */ }
+  showBackup();
+}
+async function restoreTo(device, profile) {
+  await withRaw(device, (t) => writeProfile(t, profile, log));
+}
+$('backup-restore').addEventListener('click', async () => {
+  const out = $('backup-status'), b = storedBackup();
+  if (!b || busy) return;
+  busy = true; refresh(); out.className = ''; out.textContent = 'Choose your keyboard in the browser prompt…';
+  try {
+    const device = (await navigator.hid.requestDevice({ filters: [RAW_FILTER] })).find(isRaw);
+    if (!device) throw new Error('No keyboard with the VIA firmware was selected.');
+    out.textContent = 'Restoring… do not press any keys.';
+    await restoreTo(device, b.profile);
+    out.className = 'ok'; out.textContent = 'Profile restored and saved on the keyboard.';
+  } catch (e) {
+    out.className = 'bad'; out.textContent = 'Not restored: ' + (e && e.message || e) + ' Nothing was saved on the keyboard; replug it to drop the partial changes.';
+  } finally { busy = false; refresh(); }
+});
 
 async function findBoot() {
   const known = (await navigator.hid.getDevices()).find(d => d.vendorId === BOOT.vendorId && d.productId === BOOT.productId);
@@ -172,7 +266,8 @@ async function waitForBoot(timeoutMs) {
 }
 
 async function flash() {
-  busy = true; refresh(); logEl.textContent = ''; bar.hidden = false; bar.value = 0; bootBtn.hidden = true;
+  busy = true; refresh(); logEl.textContent = ''; bar.hidden = false; bar.value = 0; bootBtn.hidden = true; $('pick').hidden = true;
+  let inBootloader = false, flashed = false, profile = null;
   try {
     const key = document.querySelector('input[name=image]:checked').value;
     setStatus('Checking the firmware image…');
@@ -185,13 +280,23 @@ async function flash() {
     if (!boot) {
       const picked = await navigator.hid.requestDevice({ filters: [
         { vendorId: NORMAL.vendorId, productId: NORMAL.productId, usagePage: NORMAL.usagePage, usage: NORMAL.usage },
+        RAW_FILTER,
         { vendorId: BOOT.vendorId, productId: BOOT.productId }] });
-      const device = picked[0];
+      const device = picked.find(d => d.vendorId === BOOT.vendorId) || picked.find(isUpdate);
       if (!device) throw new Error('No device selected.');
       if (device.vendorId === BOOT.vendorId) boot = device;
       else {
+        const raw = picked.find(isRaw);
+        if ($('keep').checked && raw) {
+          setStatus('Backing up your profile…');
+          try { profile = await withRaw(raw, readProfile); }
+          catch (e) { throw new Error(`The profile could not be backed up (${e && e.message || e}). Nothing was changed. Untick the backup option to flash without it.`); }
+          keepBackup(profile);
+          log(`Profile backed up (firmware ${profile.firmware}).`);
+        } else if ($('keep').checked) log('No VIA firmware on the keyboard yet: nothing to back up.');
         setStatus('Entering update mode…');
         await enterBootloader(device);
+        inBootloader = true;
         boot = await waitForBoot(8000);
         if (!boot) {
           setStatus('The keyboard restarted in update mode. Click “Select bootloader device” and choose it.');
@@ -203,21 +308,45 @@ async function flash() {
         }
       }
     }
+    inBootloader = true;
+    if (!profile && $('keep').checked && key === 'via') {
+      const b = storedBackup();
+      if (b) { profile = b.profile; log(`Will restore the backup taken ${new Date(b.time).toLocaleString()}.`); }
+    }
     await boot.open();
     try {
       setStatus('Flashing… do not unplug the keyboard.');
       await upload(transportFor(boot), reports, log, (p) => { bar.value = p; });
     } finally { try { await boot.close(); } catch { /* rebooting */ } }
-    bar.value = 1;
-    setStatus(key === 'via'
-      ? 'Done. The keyboard restarts with VIA support (it may take a few seconds to reappear).'
-      : 'Done. Stock firmware restored; the keyboard restarts.', 'ok');
+    bar.value = 1; flashed = true;
+    if (key !== 'via') { setStatus('Done. Stock firmware restored; the keyboard restarts.', 'ok'); return; }
+    if (!profile) { setStatus('Done. The keyboard restarts with VIA support (it may take a few seconds to reappear).', 'ok'); return; }
+    setStatus('Flashed. Waiting for the keyboard to restart to restore your profile…');
+    let raw = await waitForRaw(8000);
+    if (!raw) {
+      setStatus('Flashed. Click “Select the keyboard to restore the profile” and choose it.');
+      $('pick').hidden = false;
+      raw = await new Promise((resolve, reject) => {
+        $('pick').onclick = async () => {
+          try { const d = (await navigator.hid.requestDevice({ filters: [RAW_FILTER] })).find(isRaw); d ? resolve(d) : reject(new Error('No keyboard selected.')); }
+          catch (e) { reject(e); }
+        };
+      });
+      $('pick').hidden = true;
+    }
+    setStatus('Restoring your profile… do not press any keys.');
+    await restoreTo(raw, profile);
+    setStatus('Done. VIA firmware installed and your profile restored and saved on the keyboard.', 'ok');
   } catch (e) {
-    setStatus('Stopped: ' + (e && e.message || e) + ' — the keyboard is safe in its bootloader; run the flash again.', 'bad');
+    const why = e && e.message || e;
+    setStatus(flashed ? `The firmware was flashed, but the profile was not restored: ${why} Use “Restore this backup to the keyboard” below to try again.`
+      : inBootloader ? `Stopped: ${why} — the keyboard is safe in its bootloader; run the flash again.`
+      : `Stopped: ${why}`, 'bad');
     log(String(e && e.stack || e));
-  } finally { busy = false; refresh(); }
+  } finally { $('pick').hidden = true; busy = false; refresh(); }
 }
 go.addEventListener('click', flash);
+showBackup();
 load().catch((e) => setStatus('Could not load the firmware list: ' + e.message, 'bad'));
 </script>
 </body>

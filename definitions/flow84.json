@@ -156,14 +156,14 @@
       "shortName": "BT3"
     },
     {
-      "name": "Factory lighting mode (unverified) (05:0004)",
-      "title": "Firmware cycles a 3-state index. Physical effect on this white-only Flow84 is unverified. Stock handler saves settings. Retain/restore at original slot only.",
-      "shortName": "Mode?"
+      "name": "Side RGB effect (05:0004)",
+      "title": "Cycles the side RGB effect: steady, breathing, off. Stock handler saves settings. Retain/restore at original slot only.",
+      "shortName": "RGB FX"
     },
     {
-      "name": "Factory color index (unsupported) (05:0007)",
-      "title": "Firmware-only color index 0..7; no RGB key backlight on this white-only Flow84. Physical side-light behavior is unverified. Stock handler saves settings. Retain/restore at original slot only.",
-      "shortName": "Color?"
+      "name": "Side RGB color (05:0007)",
+      "title": "Cycles the side RGB color through 8 colors. Stock handler saves settings. Retain/restore at original slot only.",
+      "shortName": "RGB Col"
     },
     {
       "name": "Backlight brightness up (05:000F)",
@@ -300,6 +300,30 @@
           ]
         },
         {
+          "label": "Reset",
+          "content": [
+            {
+              "label": "Reset keys and macros to factory",
+              "type": "button",
+              "content": [
+                "id_flow_factory_reset",
+                0,
+                16
+              ],
+              "options": [
+                1
+              ]
+            },
+            {
+              "label": "Note",
+              "type": "label",
+              "content": [
+                "Takes effect at once but is not saved: press Save to keyboard to keep it, or unplug the keyboard to undo. Reload VIA to see the factory layout. Lighting and the tap-hold timeout are not changed."
+              ]
+            }
+          ]
+        },
+        {
           "label": "About",
           "content": [
             {
@@ -313,7 +337,8 @@
               "options": [
                 "0.0",
                 "0.1",
-                "0.2"
+                "0.2",
+                "0.3"
               ]
             }
           ]

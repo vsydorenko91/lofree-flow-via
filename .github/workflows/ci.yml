@@ -22,6 +22,7 @@ jobs:
       - run: python tools/make_web.py --version "${GITHUB_SHA::7}"
       - run: PYTHONPATH=tools python -m unittest discover -s tests
       - run: node web/test-core.mjs
+      - run: node web/test-page.mjs
       - uses: actions/upload-pages-artifact@v3
         with: { path: web }
   deploy:

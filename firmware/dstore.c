@@ -85,14 +85,14 @@ int ds_load(const ds_backend *b,ds_state *st)
 }
 /* ceil divisions without a libgcc call (n is small). */
 static unsigned cdiv5(unsigned n){return ((n+4u)*52429u)>>18;}
-static unsigned cdiv16(unsigned n){return (n+15u)>>4;}
+static unsigned cdiv20(unsigned n){return ((n+19u)*52429u)>>20;}
 static unsigned kslots(unsigned n,uint8_t level,uint8_t light)
 {
     return n?cdiv5(n):((level!=DS_NO_LEVEL||light)?1u:0u);
 }
 static unsigned bslots(unsigned blen,int write)
 {
-    return write?(blen?cdiv16(blen):1u):0u;
+    return write?(blen?cdiv20(blen):1u):0u;
 }
 static int put(const ds_backend *b,unsigned slot,uint8_t *r)
 {

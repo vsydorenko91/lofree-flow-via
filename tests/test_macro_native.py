@@ -69,6 +69,23 @@ class MacroCompile(unittest.TestCase):
         self.assertEqual(self.macro(b'ab'), rec(10, 0, [4]) + rec(10, 0, [5]) + rec(10) + TERM)
         self.assertEqual(self.macro(b'aa'), rec(10, 0, [4]) + rec(10) + rec(10, 0, [4]) + rec(10) + TERM)
 
+    def test_every_printable_ascii_character_maps_to_the_us_layout(self):
+        plain = "abcdefghijklmnopqrstuvwxyz1234567890\n\x1b\x08\t -=[]\\\x00;'`,./"
+        shifted = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()\x00\x00\x00\x00\x00_+{}|\x00:"~<>?'
+        want = {}
+        for i, (lo, hi) in enumerate(zip(plain, shifted)):         # usage 4 + i
+            if lo not in '\x00\x1b\x08':
+                want[ord(lo)] = (4 + i, 0)
+            if hi != '\x00':
+                want[ord(hi)] = (4 + i, 2)
+        self.assertEqual(sorted(want), [9, 10] + list(range(0x20, 0x7f)))
+        for ch in range(2, 256):
+            if ch in want:
+                key, mods = want[ch]
+                self.assertEqual(self.macro(bytes([ch])), rec(10, mods, [key]) + rec(10) + TERM, ch)
+            else:
+                self.assertEqual(self.compile(bytes([ch]))[0], 0, ch)
+
     def test_uppercase_and_symbols_use_shift_only_for_that_key(self):
         self.assertEqual(self.macro(b'A'), rec(10, 2, [4]) + rec(10) + TERM)
         self.assertEqual(self.macro(b'Ab'), rec(10, 2, [4]) + rec(10, 0, [5]) + rec(10) + TERM)

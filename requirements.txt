@@ -1,5 +1,5 @@
-ziglang
-unicorn
-capstone
-pyelftools
-hidapi
+ziglang==0.17.1
+unicorn==2.1.4
+capstone==5.0.9
+pyelftools==0.33
+hidapi==0.15.0

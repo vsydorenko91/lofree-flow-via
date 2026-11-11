@@ -10,10 +10,33 @@ bootloader (`3554:f800`), from which the upload can simply be repeated.
    accepts the stock enter-update command; the bootloader then takes a new image.
 2. **Keyboard is already in the bootloader.** Start the flash directly; a failed
    transfer is not a success — retry from the still-reachable bootloader.
-3. **Nothing enumerates** (failure before the application and USB start). A hardware
-   entry to the ROM/bootloader after such a failure has **not** been confirmed, so
-   there is no guaranteed unbrick. The risk is small because the bootloader is
-   separate and always checks image size and CRC before it erases.
+3. **Nothing enumerates** (failure before the application and USB start). There is
+   **no hardware entry** to the bootloader, so there is no unbrick over USB for an image
+   that uploaded correctly but does not start; see below. The risk is small because the
+   bootloader is separate and always checks image size and CRC before it erases.
+
+## How the bootloader decides (from its disassembly)
+
+At reset the bootloader configures clocks, reads 8 bytes of the settings area (selector 1,
+word `0x807C` = sector A bytes `0x1F0..0x1F7`) and does exactly one test:
+
+* bytes `12 34 56 78 9A BC`, a kind byte `D1`, `D2` or `D3`, and a checksum byte
+  (`0x55` minus the sum of the first seven) → stay in update mode (`3554:f800`);
+* anything else → jump to the application at `0x2020`. The application is **not**
+  checked at boot (no CRC, no signature), and no key, pin or other register is read.
+
+The stock "enter update mode" command runs the function at `0x1B7D4`: it erases sector A,
+programs this marker with kind `D1` and resets. So:
+
+* an interrupted or corrupted upload is safe: the marker is still there, and the keyboard
+  comes back in update mode;
+* an image that uploads completely (CRC correct) but crashes before USB works cannot be
+  replaced over USB, because only a running application can write the marker;
+* any firmware, including a future full replacement, can enter update mode itself by
+  writing these 8 bytes and resetting.
+
+`tests/test_bootloader_bounds.py` runs the real bootloader from reset in the emulator for
+both outcomes, with random values in every hardware register.
 
 ## Return to stock
 

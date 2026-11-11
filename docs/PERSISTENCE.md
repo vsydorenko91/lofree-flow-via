@@ -35,7 +35,8 @@ The stock wrappers are used for flash access: erase `0x19661`, program with veri
 item count, flags and a CRC16.
 
 * `0xC7` key record: backlight level, a "light" byte, and up to 5 `{position, VIA keycode}` pairs.
-* `0xC9` blob record: 16 bytes of the macro buffer at an offset.
+* `0xC9` blob record: up to 20 bytes of the macro buffer at an offset (16 in profiles
+  saved by 0.2.0; they load unchanged).
 * Flags: snapshot, more-records-follow, first-record-of-save, blob-reset.
 
 The light byte is `0x80 | tap_term<<5 | mode<<3 | color`.
@@ -47,8 +48,9 @@ store compacts: erase and write a snapshot; if the snapshot would not fit it ref
 **before** erasing. An unchanged profile writes nothing. A profile that fails
 validation at boot (protected slots, mod-tap limits) is discarded as a whole.
 
-Capacity: 85 changed keys, a 192-byte macro buffer; both together may not fit, in
-which case Save reports failure before writing.
+Capacity: 85 changed keys, a 192-byte macro buffer; both together may not fit (a full
+macro buffer takes 10 of the 17 records and leaves room for 35 changed keys), in which
+case Save reports failure before writing.
 
 ## Findings from hardware experiments
 

@@ -8,7 +8,7 @@ model with the same behavior; `tests/test_protocol_native.py` compares it with t
 
 Protocol version 13, keyboard values (uptime, layout options, firmware version), switch
 matrix state query, dynamic keymap get/set for single keycodes and bulk buffers
-(4 layers, matrix 6×22), keymap reset, macro count/size/buffer (`0x0C..0x10`). Anything else (encoders, QMK lighting, bootloader jump) is answered
+(4 layers, matrix 6×22), keymap reset (`0x06`, RAM only), macro count/size/buffer (`0x0C..0x10`). Anything else (encoders, QMK lighting, bootloader jump) is answered
 with the VIA "unhandled" byte `0xFF`.
 
 Keycodes: basic usages `0x04..0xA4`, mod-tap `0x2000..0x3FFF`, layer-tap `0x4000..`
@@ -33,3 +33,4 @@ never writes flash.
 | 13 | "Unsaved changes" indicator | read-only toggle (clicks are acknowledged and ignored) |
 | 14 | Tap-hold timeout preset | 0 normal, 1 short, 2 long, 3 very long |
 | 15 | Firmware version (get) | minor version number; the full version is the VIA firmware-version keyboard value (`major<<16 \| minor<<8 \| patch`) |
+| 16 | Reset to factory (set only, value 1): factory keymap and empty macros in RAM; lighting and timeout are kept; press Save to make it permanent | button |
