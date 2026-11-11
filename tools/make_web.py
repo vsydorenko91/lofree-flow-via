@@ -16,6 +16,8 @@ def main():
     a = p.parse_args()
     image = a.out / 'flow84-via.bin'
     data = flash.validate(image, a.out / 'manifest.json')      # stock + declared changes only
+    if json.loads((a.out / 'manifest.json').read_text()).get('flash_probe'):
+        sys.exit('refusing to publish an experimental --flash-probe image')
     dest = ROOT / 'web/firmware'
     dest.mkdir(parents=True, exist_ok=True)
     (dest / 'flow84-via.bin').write_bytes(data)

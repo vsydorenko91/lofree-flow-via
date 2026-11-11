@@ -41,7 +41,7 @@ the keyboard did before still works; the patch only adds on top.
 | Feature | Notes |
 |---|---|
 | Key remapping on all four layers | Windows / Mac × base / Fn, live in VIA |
-| Mod-tap `MT(mods, kc)` and layer-tap `LT(1\|3, kc)` | up to 2 positions per Windows/Mac pair; timeout setting in VIA |
+| Mod-tap `MT(mods, kc)` and layer-tap `LT(1\|3, kc)` | up to 4 positions per Windows/Mac pair; timeout setting in VIA |
 | Macros `M0..M7` | text, key taps/down/up, delays; run on the stock macro player |
 | White key backlight 0..4, side RGB color (8) and effect (steady / breathing / off) | controls in the VIA menu |
 | **Save to keyboard** | stores everything on the keyboard; survives power cycles |
@@ -75,7 +75,7 @@ the keyboard did before still works; the patch only adds on top.
   ([how it is stored](docs/PERSISTENCE.md)).
 * **Layers.** VIA shows four layers (Windows/Mac × base/Fn). The Windows/Mac switch stays
   hardware; arbitrary layer keys are rejected.
-* **Mod-tap and layer-tap** work on at most two keys per Windows/Mac pair, send the tap on
+* **Mod-tap and layer-tap** work on at most four keys per Windows/Mac pair, send the tap on
   key *release* (a small delay), and are best kept off Space and letters. The timeout (120–500 ms) is
   selectable in VIA ([details](docs/TAP_HOLD.md)).
 * **Macros** use the stock player: ASCII text (US layout), key taps/holds and delays. No media

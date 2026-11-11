@@ -56,6 +56,34 @@ case Save reports failure before writing.
 
 * Writing selector 0 from the application: erase "succeeds", programming returns an
   error or leaves memory unchanged although the command sequence matches the
-  bootloader; code running from RAM triggers a reset. Cause unknown.
+  bootloader; code running from RAM triggers a reset.
+
+## Why the application cannot write its own flash (analysis, not yet confirmed on hardware)
+
+The flash driver in the application (`0x1881c..0x18ac4`, wrappers `0x19660` and `0x1b9a4`)
+is the same code as in the bootloader (`0xe78..0x1120`, `0x11c4`, `0x12a8`): same unlock
+keys, same command register values, same permission check (only selector 0 below word
+`0x800`, the bootloader itself, is refused). The software sequence is therefore not the
+cause.
+
+The one difference found: the first thing the stock `main()` (`0x1d854`) does is call
+`0x1938c(5)`, which writes `0xE0` to flash-controller register `0x803024`
+(arguments 1..5 give `0xFE, 0xFC, 0xF8, 0xF0, 0xE0`). The bootloader never writes that
+register. It looks like a write-protection map for the main array that the application
+arms at start and that does not cover the settings area (selector 1).
+
+To test it there is an opt-in experimental image:
+
+```sh
+python tools/build.py --flash-probe          # out/probe/, never published by make_web.py
+python tools/flash.py flash --image out/probe/flow84-via.bin --manifest out/probe/manifest.json
+python tools/device_check.py flashprobe      # --slot 1..15 for a repeat run
+```
+
+It programs two spare words at `0x27d00+` (past the image, inside the window the
+bootloader erases on every update): one with the register as it is, one with it set to 0,
+restores the register and reports both results. Flash a normal image afterwards. If the
+second word programs and the first does not, the application can store data in its own
+flash area and the 476-byte limit of the profile can go.
 * I²C EEPROM: stock code exists, but its enable flag is zero and forced reads return
   zeros within 3 ms (no chip on the bus).

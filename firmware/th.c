@@ -97,7 +97,7 @@ static unsigned inverted(unsigned idx)
 
 /* Runtime-only markers: kind 10 = mod-tap, kind 11 = layer-tap (hold = Fn). */
 static unsigned bound_kind(unsigned t){return t == 10 || t == 11;}
-static unsigned physical_fn(const u32 *physical)
+IN_HOLE_B static unsigned physical_fn(const u32 *physical)
 {
     unsigned i;
     for(i=0;i<NKEYS;++i)
@@ -377,7 +377,7 @@ void th_usb_submit(const u8 *report, unsigned length)
 }
 
 /* RAM remaps require both physical and synthetic input to be idle. */
-int th_busy(void)
+IN_HOLE_A int th_busy(void)
 {
     unsigned i;
     for (i = 0; i < ROWS; ++i) if (MATRIX[i]) return 1;

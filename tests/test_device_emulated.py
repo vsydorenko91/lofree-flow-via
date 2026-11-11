@@ -102,7 +102,7 @@ class DeviceTransport(unittest.TestCase):
         self.assertEqual(b.transact(packet(5,layer,row,col,code>>8,code&255))[0],5)
         self.assertEqual(b.transact(packet(4,layer,row,col))[4:6],struct.pack('>H',code))
         # Timing remains processing passes; shorten only the emulator descriptor.
-        for k in range(2):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',4))
+        for k in range(4):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',4))
 
     def test_runtime_mt_short_tap_hold_and_remove(self):
         b=self.board();self.set_mt(b)
@@ -150,7 +150,7 @@ class DeviceTransport(unittest.TestCase):
         row,col=divmod(slot,22)
         self.assertEqual(b.transact(packet(5,layer,row,col,code>>8,code&255))[0],5)
         self.assertEqual(b.transact(packet(4,layer,row,col))[4:6],struct.pack('>H',code))
-        for k in range(2):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',4))
+        for k in range(4):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',4))
 
     def test_runtime_lt_tap_sends_key_and_hold_selects_fn_layer(self):
         b=self.board();self.set_lt(b)
@@ -197,8 +197,9 @@ class DeviceTransport(unittest.TestCase):
         self.assertEqual(b.transact(packet(4,0,3,0))[4:6],bytes([0,0x39]))
         self.set_lt(b,layer=2,code=0x4329)
 
-    def test_runtime_lt_shares_two_position_budget_with_mt_and_atomic_reject(self):
+    def test_runtime_lt_shares_the_position_budget_with_mt_and_atomic_reject(self):
         b=self.board();self.set_lt(b,slot=66);self.set_mt(b,slot=67,code=0x224a)
+        self.set_mt(b,slot=70,code=0x2428);self.set_mt(b,slot=71,code=0x282c)
         self.assertEqual(b.transact(packet(5,0,3,2,0x41,0x29))[0],0xff)
         self.assertEqual(b.transact(packet(4,0,3,2))[4:6],bytes([0,0x16]))
         # Same position cannot be LT in one layer and a different MT code in the other.
@@ -214,7 +215,7 @@ class DeviceTransport(unittest.TestCase):
 
     def test_runtime_lt_reserved_slots_reject_and_remove_restores_plain_key(self):
         b=self.board()
-        for slot in (19,20,41,42,15,21):
+        for slot in (19,20,41,42,63,64,85,86,15,21):
             r,c=divmod(slot,22)
             self.assertEqual(b.transact(packet(5,0,r,c,0x41,0x29))[0],0xff)
         self.set_lt(b)
@@ -234,21 +235,45 @@ class DeviceTransport(unittest.TestCase):
 
     def test_runtime_mt_capacity_and_cross_layer_conflict_reject_atomically(self):
         b=self.board();self.set_mt(b,slot=66);self.set_mt(b,slot=67,code=0x224a)
+        self.set_mt(b,slot=70,code=0x2428);self.set_mt(b,slot=71,code=0x282c)      # four is the limit
         self.assertEqual(b.transact(packet(5,0,3,2,0x21,0x29))[0],0xff)
         self.assertEqual(b.transact(packet(4,0,3,2))[4:6],bytes([0,0x16]))
         self.assertEqual(b.transact(packet(5,1,3,0,0x22,0x29))[0],0xff)
         self.assertEqual(b.transact(packet(5,1,3,0,0x21,0x29))[0],5)
-        # Bulk proposes a harmless change plus a third MT in one transaction.
+        # Bulk proposes a harmless change plus a fifth MT in one transaction.
         off=(66*2);old=b.transact(packet(0x12,off>>8,off&255,6))[4:10]
         self.assertEqual(b.transact(packet(0x13,off>>8,off&255,6,0x21,0x29,0x22,0x4a,0x21,0x29))[0],0xff)
         self.assertEqual(b.transact(packet(0x12,off>>8,off&255,6))[4:10],old)
 
+    def test_runtime_four_tap_hold_keys_each_tap_and_hold_independently(self):
+        keys=((66,0x2129,0x29,1),(67,0x222b,0x2b,2),(70,0x2428,0x28,4),(71,0x282c,0x2c,8))   # slot, MT code, tap, hold mods
+        b=self.board()
+        for slot,code,_,_ in keys:self.set_mt(b,slot=slot,code=code)
+        for slot,_,tap,mods in keys:
+            before=len(b.reports)
+            b.matrix(slot);b.matrix();b.drain()
+            self.assertEqual([tap in r[2:7] for r in b.reports[before:]],[True,False],hex(tap))
+            for _ in range(5):b.matrix(slot)
+            self.assertEqual(b.mods(),mods);b.matrix();b.drain()
+            self.assertEqual((b.mods(),b.held_keys()),(0,set()))
+        # All four held at once: every modifier is down, then everything releases cleanly.
+        for _ in range(6):b.matrix(*(k[0] for k in keys))
+        self.assertEqual(b.mods(),15);b.matrix();b.drain()
+        self.assertEqual((b.mods(),b.held_keys(),b.faults()&2),(0,set(),0))   # bit 1 = tap queue overflow
+        # Four quick taps in a row come out in order, one complete pulse each.
+        before=len(b.reports)
+        for slot,_,_,_ in keys:
+            b.matrix(slot,submit=False);b.matrix(submit=False)
+        b.drain(60)
+        self.assertEqual([r[2] for r in b.reports[before:] if r[2]],[k[2] for k in keys])
+        self.assertEqual(b.held_keys(),set())
+
     def test_runtime_mt_reserved_slots_and_gpio_holes_reject(self):
         b=self.board()
-        for slot in (19,20,41,42,15,21):
+        for slot in (19,20,41,42,63,64,85,86,15,21):
             r,c=divmod(slot,22)
             self.assertEqual(b.transact(packet(5,0,r,c,0x21,0x29))[0],0xff)
-        for slot in (19,20,41,42):
+        for slot in (19,20,41,42,63,64,85,86):
             r,c=divmod(slot,22)
             self.assertEqual(b.transact(packet(5,0,r,c,0,4))[0],0xff)
 
@@ -286,7 +311,7 @@ class DeviceTransport(unittest.TestCase):
         for _ in range(8):b.matrix(PHYS)
         self.assertEqual(b.mods(),0)
         b.matrix()
-        for k in range(2):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',4))
+        for k in range(4):b.write(b.sym['th_runtime_cfg']+k*6+4,struct.pack('<H',4))
         for _ in range(4):b.matrix(PHYS)
         self.assertEqual(b.mods(),2);b.matrix();self.assertEqual(b.mods(),0)
 
@@ -430,14 +455,20 @@ class DeviceTransport(unittest.TestCase):
         self.assertEqual(result['before'],'0x4');self.assertEqual(result['temporary'],'0x5')
         self.assertEqual(b.read(0x401c34+67*4+1,1),b'\x04')
 
-    def test_legacy_mouse_sender_cannot_emit_short_packets_on_raw_endpoint(self):
-        b=self.board()
-        b.write(0x4003d0,bytes([1,1])+bytes(6))
-        b.write(0x4003bc,b'\x01');b.write(0x4003b0,b'\0');b.write(0x4003c4,b'\x01')
-        b.write(0x401080+0x1a,b'\0\0')
-        b.call(0x1f99c)
-        self.assertEqual(b.tx[3],[])
-        self.assertEqual(b.transact(packet(1)),packet(1,0,13))
+    def test_dead_stock_functions_hold_our_code_and_are_unreachable_from_stock(self):
+        import build as builder,oe915
+        from emulator import bl
+        sizes={x['name']:x['size'] for x in self.manifest['sections']}
+        owners={'.hole_a':'via_gate_loader','.hole_b':'via_gate_poll'}
+        for name,(lo,size,sites) in builder.HOLES.items():
+            self.assertTrue(0<sizes[name]<=size,name)
+            for site in sites:      # every former caller now goes to our gate instead
+                self.assertEqual(self.image[site:site+4],bl(site,self.symbols[owners[name]]),hex(site))
+        for n,(lo,hi) in (('ds_pr',(0x19710,0x19818)),('th_busy',(0x19710,0x19818)),('ds_er',(0x1f99c,0x1fab0)),('physical_fn',(0x1f99c,0x1fab0))):
+            self.assertTrue(lo<=(self.symbols[n]&~1)<hi,n)
+        # A reference from stock code into a hole must fail the build.
+        bad=bytearray(self.image);bad[0x1613e:0x16142]=bl(0x1613e,0x1f99c)
+        with self.assertRaises(ValueError):builder.check_holes(oe915.load_stock(),bad)
 
     def test_only_pointing_interface_descriptor_changes(self):
         b=self.board()

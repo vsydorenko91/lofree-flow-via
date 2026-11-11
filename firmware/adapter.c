@@ -88,7 +88,15 @@ static u16 cand_code(unsigned i)
     for(k=0;k<cand_n;++k)if(cand[k].pos==i)return cand[k].code;
     return ds_factory(0,i);
 }
-/* A pair of OS layers may use up to two physical MT positions. A position
+/* Matrix positions the tap-hold engine presses itself: columns 19 and 20 of the first
+ * TH_MAX rows (empty in every ROM keymap, no switch there). They keep their ROM entries. */
+static int virtual_slot(unsigned slot)
+{
+    unsigned row=0;
+    while(slot>=22){slot-=22;++row;}
+    return row<TH_MAX && (slot==19||slot==20);
+}
+/* A pair of OS layers may use up to TH_MAX physical tap-hold positions. A position
  * shared by base/Fn must use the same MT code, so queued taps keep their action. */
 static const u8 *future(unsigned i,u16 first,u8 count,const u8 (*a)[4])
 {
@@ -168,7 +176,7 @@ static int commit(void *user,u16 first,u8 count,const u8 (*a)[4])
     /* Check the complete future profile before publishing any entry. */
     for(j=0;j<count;++j){
         slot=local_of(first+j);
-        if(slot==19||slot==20||slot==41||slot==42)
+        if(virtual_slot(slot))
             for(n=0;n<4;++n)if(a[j][n]!=banks[first+j][n])return 0;
     }
     if(!th_plan(0,first,count,a,cfg,codes)||!th_plan(1,first,count,a,cfg,codes))return 0;
@@ -244,7 +252,7 @@ static int ds_rd(void *user,u16 off,u16 n,u8 *out)
     s1_read(0x8000u+(off>>2),n,out);
     return 1;
 }
-static int ds_er(void *user)
+IN_HOLE_B static int ds_er(void *user)
 {
     u8 tail[32];unsigned i,keep=0;int ok;
     (void)user;
@@ -257,7 +265,7 @@ static int ds_er(void *user)
     backend_ok=ok!=0;save_stage=ok?3:4;
     return ok;
 }
-static int ds_pr(void *user,u16 off,u16 n,const u8 *in)
+IN_HOLE_A static int ds_pr(void *user,u16 off,u16 n,const u8 *in)
 {
     int ok;
     (void)user;
@@ -295,7 +303,7 @@ static int profile_valid(const ds_entry *list,unsigned count)
     for(i=0;i<528&&ok;++i){
         if(!flow_via_decode_keycode(&protocol,i,cand_code(i),e)){ok=0;break;}
         slot=local_of(i);
-        if(slot==19||slot==20||slot==41||slot==42)
+        if(virtual_slot(slot))
             for(n=0;n<4;++n)if(e[n]!=*((const volatile u8 *)rom[layer_of(i)]+slot*4+n))ok=0;
     }
     if(ok)ok=th_plan(0,0,0,0,cfg,codes)&&th_plan(1,0,0,0,cfg,codes);
@@ -333,6 +341,32 @@ static int save_profile(void)
     return !save_failed;
 }
 
+#ifdef FLOW_FLASH_PROBE
+/* HARDWARE EXPERIMENT ONLY (tools/build.py --flash-probe); never part of a release image.
+ * Question: the application cannot program its own flash area (selector 0) although its flash
+ * driver is byte-identical to the bootloader's. The only difference found: the stock main()
+ * writes 0xE0 to flash-controller register 0x803024 and the bootloader never touches it.
+ * This programs two spare words past the image, the first with the register as it is and the
+ * second with it cleared, and reports what happened. The words lie inside the window the
+ * bootloader erases on every update, so flashing any image removes them again. */
+#define PROBE_WORD 0x9f40u                       /* flash 0x27d00..0x27d7f, 16 slots of two words */
+#define FLASH_PROTECT (*(volatile u32 *)0x803024u)
+_Static_assert(PROBE_WORD*4u>=0x27d00u && (PROBE_WORD+32u)*4u<=0x27e00u,"probe words outside the spare tail");
+static void flash_probe(unsigned slot,u8 *r)
+{
+    static const u8 pattern[4]={0x5a,0xa5,0x3c,0xc3};
+    const unsigned word=PROBE_WORD+(slot&15u)*2u;
+    const u32 before=FLASH_PROTECT;
+    unsigned i,k;
+    r[3]=1;r[4]=(u8)before;
+    for(k=0;k<2;++k){
+        if(k){FLASH_PROTECT=0;r[10]=(u8)FLASH_PROTECT;}
+        r[5+k*6]=((int (*)(unsigned,unsigned,unsigned,const u8 *))0x1b9a5u)(0,word+k,4,pattern)!=0;
+        for(i=0;i<4;++i)r[6+k*6+i]=*((const volatile u8 *)((word+k)*4u)+i);
+    }
+    FLASH_PROTECT=before;r[16]=(u8)FLASH_PROTECT;
+}
+#endif
 /* Explicit button: 07 channel0 value1 payload1. Generic09 (sent by VIA
  * automatically after custom changes) acknowledges but NEVER saves. */
 static int profile_command(const u8 q[32],u8 r[32])
@@ -379,6 +413,12 @@ static int profile_command(const u8 q[32],u8 r[32])
         if(q[3]>=DS_SLOTS || !ds_rd(0,(u16)(q[3]*DS_REC),DS_REC,r+3)){r[0]=0xff;}
         return 1;
     }
+#ifdef FLOW_FLASH_PROBE
+    if(q[0]==8 && q[2]==17){
+        if(th_busy()||saving)r[0]=0xff;else flash_probe(q[3],r);
+        return 1;
+    }
+#endif
     if(q[2]==16){
         /* Button: factory keymap and empty macros, RAM only (Save makes it permanent). */
         if(q[0]==7 && (q[3]!=1 || !factory_reset(0) || !macro_rs(0)))r[0]=0xff;

@@ -24,8 +24,9 @@ def telemetry(c):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command',choices=['backup','restore','save','status','telemetry','dump','rate'])
+    p.add_argument('command',choices=['backup','restore','save','status','telemetry','dump','rate','flashprobe'])
     p.add_argument('--file',type=Path)
+    p.add_argument('--slot',type=int,default=0,help='flashprobe: 0..15, a fresh pair of spare flash words per slot')
     a=p.parse_args()
     if a.command in ('backup','restore') and a.file is None:p.error('--file required')
     import hid
@@ -57,6 +58,22 @@ def main():
             n=(telemetry(c)['passes']-a0)&0xffff
             print(json.dumps({'passes_per_second':round(n/(time.perf_counter()-t),1),'note':'run once idle and once while holding a key'}))
         elif a.command=='telemetry':print(json.dumps(telemetry(c)))
+        elif a.command=='flashprobe':
+            # Needs an image built with `tools/build.py --flash-probe`; a normal image rejects the request.
+            if not 0<=a.slot<16:raise DeviceError('slot 0..15')
+            r=c.exchange(packet(8,0,17,a.slot))
+            if r[3]!=1:raise DeviceError('unexpected flash-probe ABI')
+            want=bytes([0x5a,0xa5,0x3c,0xc3])
+            out={'protect_register_before':hex(r[4]),
+                 'as_is':{'wrapper_ok':bool(r[5]),'flash':r[6:10].hex(),'programmed':r[6:10]==want},
+                 'protect_register_cleared_reads':hex(r[10]),
+                 'cleared':{'wrapper_ok':bool(r[11]),'flash':r[12:16].hex(),'programmed':r[12:16]==want},
+                 'protect_register_restored':hex(r[16])}
+            out['conclusion']=('register 0x803024 is the write protection: the application can program its own flash once it is cleared'
+                               if out['cleared']['programmed'] and not out['as_is']['programmed'] else
+                               'the application can already program this area; protection is not the cause'
+                               if out['as_is']['programmed'] else 'clearing 0x803024 is not enough; the cause is elsewhere')
+            print(json.dumps(out,indent=2))
         elif a.command=='dump':
             for slot in range(17):
                 rec=c.exchange(packet(8,0,12,slot))[3:31]

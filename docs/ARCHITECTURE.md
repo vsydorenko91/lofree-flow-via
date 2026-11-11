@@ -47,7 +47,10 @@ only in the Mac pair.
 
 The stock bootloader accepts payloads up to `0x25e00` bytes at flash base `0x2000`
 (see [MEMORY.md](MEMORY.md)), so the whole container is at most `0x27e00` bytes.
-`tools/oe915.py` enforces this and the build fails if a section exceeds it. RAM:
+`tools/oe915.py` enforces this and the build fails if a section exceeds it. Two stock
+functions that this patch leaves without callers (the Win/Mac keymap loader at `0x19710`
+and the mouse report sender at `0x1f99c`, 540 bytes together) hold our code as well; the
+build fails if anything in the stock image can still reach them. RAM:
 BSS ends near `0x405e00` and the build keeps a stack reserve below `0x406000`.
 
 ## Verification strategy

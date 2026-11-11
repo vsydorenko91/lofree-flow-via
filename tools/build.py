@@ -15,10 +15,41 @@ MATRIX_CALLS=(0x17096,0x1906e,0x1b852,0x20232,0x206ce,0x20766,0x208be,
               0x20c3e,0x210f8,0x21a54,0x21b82,0x21d38,0x21fe0)
 # Raw HID interface (usage page 0xff60, usage 0x61, 32-byte reports) that replaces the unused mouse interface.
 RAW_DESCRIPTOR=bytes.fromhex('06 60 ff 09 61 a1 01 15 00 26 ff 00 75 08 95 20 09 62 81 02 95 20 09 63 91 02 c0')
+# Stock functions whose only callers this build redirects; their bytes are reused for our code.
+# name: (address, size, former call sites, the stock function they called)
+HOLES={'.hole_a':(0x19710,0x108,(0x1b06a,)),
+       '.hole_b':(0x1f99c,0x114,(0x1613e,0x1c462,0x1c914,0x1cc9a,0x20b5e))}
 STOCK_MODE_SWITCH_CALL=bytes.fromhex('fef751fb')   # bl at 0x1b06a: Win/Mac switch loads the keymap from settings
 
 
-def build(out,term=200,*,lto=True):
+def check_holes(stock,data):
+    """A hole is safe only while nothing in the stock code can still reach it."""
+    def target(d,a):
+        h,l=struct.unpack_from('<HH',d,a)
+        if h&0xf800==0xf000 and l&0xf800==0xf800:                    # bl
+            off=((h&0x7ff)<<12)|((l&0x7ff)<<1);return a+4+off-(0x800000 if off&0x400000 else 0)
+        if h&0xf800==0xe000:                                         # b
+            off=(h&0x7ff)<<1;return a+4+off-(0x1000 if off&0x800 else 0)
+        if h&0xf000==0xd000 and (h>>8)&15<14:                        # b<cond>
+            off=(h&0xff)<<1;return a+4+off-(0x200 if off&0x100 else 0)
+    for name,(lo,size,sites) in HOLES.items():
+        hi=lo+size
+        for a in sites:
+            if target(stock,a)!=lo:raise ValueError(f'{name}: {a:#x} is not a stock call of {lo:#x}')
+        for a in range(0x2000,len(stock)-3,2):
+            if lo<=a<hi:continue
+            t=target(data,a)
+            if t is not None and lo<=t<hi:raise ValueError(f'{name}: stock code at {a:#x} still reaches {t:#x}')
+        for a in range(0x2000,len(stock)-3,4):                       # function pointers and literals
+            if lo<=a<hi:continue
+            if lo<=(struct.unpack_from('<I',stock,a)[0]&~1)<hi:raise ValueError(f'{name}: pointer at {a:#x}')
+
+
+# --flash-probe: spare flash words used by the hardware experiment in firmware/adapter.c.
+PROBE_START=0x27d00
+
+
+def build(out,term=200,*,lto=True,flash_probe=False):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     stock=oe915.load_stock();payload=stock[0x2000:]
     if hashlib.sha256(payload).hexdigest()!=PAYLOAD_SHA:raise ValueError('wrong firmware payload')
@@ -33,6 +64,7 @@ def build(out,term=200,*,lto=True):
          '-I'+str(HERE/'firmware'),str(HERE/'firmware/th.c'),str(HERE/'firmware/gate.S'),
          str(HERE/'firmware/protocol.c'),str(HERE/'firmware/adapter.c'),str(HERE/'firmware/dstore.c'),str(HERE/'firmware/macro.c'),'-o',str(elf_path)]
     if lto:cmd[4:4]=["-flto"]
+    if flash_probe:cmd[4:4]=['-DFLOW_FLASH_PROBE']
     subprocess.run(cmd,check=True)
     with elf_path.open('rb') as f:
         e=ELFFile(f)
@@ -48,6 +80,9 @@ def build(out,term=200,*,lto=True):
         if raw is None:continue
         if a+n>CODE_LIMIT:raise ValueError('allocated flash section exceeds image safety limit')
         if name=='.th_gate':patch(a,bytes(n),raw,'hook gates in original zero padding')
+        elif name in HOLES:
+            if a!=HOLES[name][0] or n>HOLES[name][1]:raise ValueError(f'{name} does not fit its stock hole')
+            if n:patch(a,bytes(stock[a:a+n]),raw,f'our code in the dead stock function at {a:#x}')
         else:
             if a<len(stock):raise ValueError(f'unexpected section {name}')
             if len(data)<a:data.extend(bytes(a-len(data)))
@@ -73,7 +108,7 @@ def build(out,term=200,*,lto=True):
     patch(0x1672c,stock[0x1672c:0x1672e],bytes.fromhex('7047'),'OEM: never erase sector A (function returns at once)')
     for site,callee in ((0x1f450,0x19660),(0x1f45c,0x1b9a4),(0x1f5a4,0x19660),(0x1f5b0,0x1b9a4)):
         patch(site,bl(site,callee),b'\xc0\x46'*2,f'OEM journal rotation: no sector-A backup call {callee:#x}')
-    patch(0x1fa7a,bl(0x1fa7a,0x12254),b'\xc0\x46'*2,'suppress every legacy mouse packet at stock EP3 submit site')
+    # The stock mouse sender (0x1f99c) is never called any more: all five call sites go to via_gate_poll.
     patch(0x1c14c,struct.pack('<I',0x401aec),struct.pack('<I',symbols['th_shadow']),'private matrix')
     end=(max(a+n for name,a,n,raw in sections if raw is None)+3)&~3
     patch(0x21b4,struct.pack('<I',0x45ec),struct.pack('<I',end-0x4007d8),'initialize all new BSS')
@@ -95,18 +130,23 @@ def build(out,term=200,*,lto=True):
     patch(0x228f4,struct.pack('<I',87),struct.pack('<I',len(RAW_DESCRIPTOR)),'IF2 report length table')
     # Endpoint2 uses CSR+0x10 value4 for32B. The same value is live in r5 at EP3 init.
     patch(0x18322,struct.pack('<H',0x7402),struct.pack('<H',0x7405),'EP3 buffer config: strb r5,#0x10 (value4)')
+    check_holes(stock,data)
+    if flash_probe and len(data)>PROBE_START:raise ValueError('image overlaps the flash-probe words')
     oe915.validate_image_size(data)
     data=bytearray(oe915.seal(data))
     list(oe915.upgrade_reports(bytes(data)))
     image=out/'flow84-via.bin';image.write_bytes(data)
     manifest={'image':image.name,'sha256':hashlib.sha256(data).hexdigest(),'stock_sha256':oe915.STOCK_SHA,
-              'old_size':len(stock),'new_size':len(data),'bss_end':hex(end),'lto':bool(lto),
+              'old_size':len(stock),'new_size':len(data),'flash_probe':bool(flash_probe),'bss_end':hex(end),'lto':bool(lto),
               'sections':[{'name':name,'address':hex(a),'size':n} for name,a,n,raw in sections],
               'symbols':symbols,'changes':changes,'raw_descriptor':RAW_DESCRIPTOR.hex()}
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     return bytes(data),symbols,manifest
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--out',type=Path,default=HERE/'out');p.add_argument('--no-lto',action='store_true');a=p.parse_args()
-    _,_,m=build(a.out,lto=not a.no_lto)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--out',type=Path,default=HERE/'out');p.add_argument('--no-lto',action='store_true')
+    p.add_argument('--flash-probe',action='store_true',help='experimental image for the code-flash write experiment; goes to out/probe unless --out is given')
+    a=p.parse_args()
+    if a.flash_probe and a.out==HERE/'out':a.out=HERE/'out/probe'
+    _,_,m=build(a.out,lto=not a.no_lto,flash_probe=a.flash_probe)
     print(json.dumps({k:m[k] for k in ('sha256','new_size','bss_end')},indent=2))
